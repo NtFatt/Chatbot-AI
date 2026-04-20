@@ -1,0 +1,224 @@
+@import '@fontsource/space-grotesk/500.css';
+@import '@fontsource/space-grotesk/700.css';
+@import '@fontsource/manrope/400.css';
+@import '@fontsource/manrope/500.css';
+@import '@fontsource/manrope/700.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --background: 245 247 244;
+    --foreground: 15 23 32;
+    --panel: 255 255 255;
+    --panel-border: 15 23 32;
+    --muted: 86 100 112;
+    --accent: 67 212 200;
+    --accent-deep: 12 109 122;
+  }
+
+  [data-theme='dark'] {
+    color-scheme: dark;
+    --background: 10 15 27;
+    --foreground: 241 245 249;
+    --panel: 15 23 42;
+    --panel-border: 148 163 184;
+    --muted: 148 163 184;
+    --accent: 67 212 200;
+    --accent-deep: 131 244 235;
+  }
+
+  html {
+    @apply scroll-smooth;
+  }
+
+  body {
+    @apply min-h-screen bg-paper text-ink font-body antialiased;
+    background-image:
+      radial-gradient(circle at top left, rgba(67, 212, 200, 0.2), transparent 24%),
+      radial-gradient(circle at 80% 10%, rgba(12, 109, 122, 0.15), transparent 18%),
+      linear-gradient(180deg, rgba(255,255,255,0.96), rgba(245,247,244,1));
+  }
+
+  [data-theme='dark'] body {
+    background-image:
+      radial-gradient(circle at top left, rgba(67, 212, 200, 0.12), transparent 26%),
+      radial-gradient(circle at 80% 10%, rgba(12, 109, 122, 0.24), transparent 18%),
+      linear-gradient(180deg, rgba(10,15,27,0.98), rgba(8,12,21,1));
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(12, 109, 122, 0.35) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: rgba(12, 109, 122, 0.26);
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: rgba(12, 109, 122, 0.42);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply rounded-[28px] border border-black/5 bg-white/80 shadow-soft backdrop-blur-xl;
+  }
+
+  [data-theme='dark'] .glass-panel {
+    @apply border-white/10;
+    background-color: rgba(2, 6, 23, 0.6);
+  }
+
+  .focus-ring {
+    @apply outline-none ring-offset-2 transition focus-visible:ring-2 focus-visible:ring-cyan focus-visible:ring-offset-transparent;
+  }
+
+  .app-scrollbar {
+    scrollbar-gutter: stable;
+    overscroll-behavior: contain;
+  }
+
+  .composer-scrollbar {
+    scrollbar-gutter: stable;
+    overscroll-behavior: contain;
+  }
+
+  .composer-scrollbar::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .composer-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(12, 109, 122, 0.22);
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+  }
+
+  .composer-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(12, 109, 122, 0.35);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  .markdown-body {
+    @apply space-y-4 break-words text-[15px] leading-7 text-ink/90;
+  }
+
+  [data-theme='dark'] .markdown-body {
+    color: rgba(241, 245, 249, 0.9);
+  }
+
+  .markdown-body p {
+    @apply text-[15px] leading-7;
+  }
+
+  .markdown-body h1,
+  .markdown-body h2,
+  .markdown-body h3 {
+    @apply font-display font-semibold tracking-[-0.03em] text-ink;
+  }
+
+  .markdown-body h1 {
+    @apply text-2xl;
+  }
+
+  .markdown-body h2 {
+    @apply mt-6 text-xl;
+  }
+
+  .markdown-body h3 {
+    @apply mt-5 text-lg;
+  }
+
+  [data-theme='dark'] .markdown-body h1,
+  [data-theme='dark'] .markdown-body h2,
+  [data-theme='dark'] .markdown-body h3 {
+    color: rgba(248, 250, 252, 0.96);
+  }
+
+  .markdown-body ul {
+    @apply list-disc space-y-2 pl-5;
+  }
+
+  .markdown-body ol {
+    @apply list-decimal space-y-2 pl-5;
+  }
+
+  .markdown-body li {
+    @apply pl-1;
+  }
+
+  .markdown-body li::marker {
+    color: rgb(12 109 122);
+  }
+
+  [data-theme='dark'] .markdown-body li::marker {
+    color: rgb(131 244 235);
+  }
+
+  .markdown-body blockquote {
+    @apply rounded-r-[20px] border-l-4 border-cyan/35 bg-cyan/5 px-4 py-3 text-sm leading-7 text-ink;
+    color: rgba(15, 23, 32, 0.78);
+  }
+
+  [data-theme='dark'] .markdown-body blockquote {
+    @apply border-cyan/45 bg-cyan/10;
+    color: rgba(226, 232, 240, 0.88);
+  }
+
+  .markdown-body a {
+    @apply font-semibold text-ocean underline decoration-ocean/25 underline-offset-4;
+  }
+
+  [data-theme='dark'] .markdown-body a {
+    @apply text-cyan decoration-cyan/30;
+  }
+
+  .markdown-body strong {
+    @apply font-semibold text-ink;
+  }
+
+  [data-theme='dark'] .markdown-body strong {
+    color: rgba(248, 250, 252, 0.96);
+  }
+
+  .markdown-body hr {
+    @apply my-5 border-black/10;
+  }
+
+  [data-theme='dark'] .markdown-body hr {
+    @apply border-white/10;
+  }
+
+  .markdown-body pre {
+    @apply overflow-x-auto rounded-2xl bg-ink px-4 py-3 text-xs;
+    color: rgb(241 245 249);
+  }
+
+  .markdown-body code {
+    @apply rounded-md bg-black/5 px-1.5 py-0.5 text-[0.9em];
+  }
+
+  .markdown-body pre code {
+    @apply bg-transparent p-0;
+  }
+}
