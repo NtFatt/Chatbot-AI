@@ -136,13 +136,13 @@ export class ChatRepository {
         sessionId,
         ...(since
           ? {
-              createdAt: {
+              updatedAt: {
                 gt: since,
               },
             }
           : {}),
       },
-      orderBy: { createdAt: 'asc' },
+      orderBy: [{ updatedAt: 'asc' }, { createdAt: 'asc' }],
     });
   }
 }

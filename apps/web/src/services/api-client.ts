@@ -1,6 +1,7 @@
 import type { ApiEnvelope, LoginResponse } from '@chatbot-ai/shared';
 
 import { useAuthStore } from '../store/auth-store';
+import { ApiClientError, createApiClientError } from '../utils/transport-errors';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
 
@@ -10,11 +11,34 @@ type RequestOptions = RequestInit & {
 };
 
 const parseJson = async <T>(response: Response) => {
-  const payload = (await response.json()) as ApiEnvelope<T>;
+  const raw = await response.text();
+  let payload: ApiEnvelope<T> | null = null;
+
+  if (raw) {
+    try {
+      payload = JSON.parse(raw) as ApiEnvelope<T>;
+    } catch {
+      throw new ApiClientError(
+        'Phản hồi từ máy chủ không đúng định dạng mong đợi.',
+        response.status,
+        'INVALID_SERVER_PAYLOAD',
+      );
+    }
+  }
+
+  if (!payload) {
+    if (response.ok) {
+      throw new ApiClientError('Máy chủ không trả về dữ liệu hợp lệ.', response.status, 'EMPTY_RESPONSE');
+    }
+
+    throw createApiClientError(response, undefined, 'Máy chủ trả về phản hồi rỗng.');
+  }
 
   if (!response.ok || !payload.success) {
-    throw new Error(
-      payload.success ? response.statusText : payload.error.message || 'Request failed unexpectedly.',
+    throw createApiClientError(
+      response,
+      payload.success ? undefined : payload,
+      'Yêu cầu chưa thể hoàn tất.',
     );
   }
 
@@ -61,20 +85,39 @@ export const apiRequest = async <T>(path: string, options: RequestOptions = {}) 
     headers.set('Content-Type', 'application/json');
   }
 
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers,
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers,
+    });
+  } catch (error) {
+    throw new ApiClientError(
+      error instanceof Error ? error.message : 'Không thể kết nối tới máy chủ.',
+      0,
+      'NETWORK_ERROR',
+    );
+  }
 
   if (response.status === 401 && options.retryOnAuth !== false && store.refreshToken) {
     try {
       const nextAccessToken = await refreshAuth();
       headers.set('Authorization', `Bearer ${nextAccessToken}`);
 
-      const retried = await fetch(`${API_URL}${path}`, {
-        ...options,
-        headers,
-      });
+      let retried: Response;
+      try {
+        retried = await fetch(`${API_URL}${path}`, {
+          ...options,
+          headers,
+        });
+      } catch (error) {
+        throw new ApiClientError(
+          error instanceof Error ? error.message : 'Không thể kết nối tới máy chủ.',
+          0,
+          'NETWORK_ERROR',
+        );
+      }
 
       return parseJson<T>(retried);
     } catch (error) {

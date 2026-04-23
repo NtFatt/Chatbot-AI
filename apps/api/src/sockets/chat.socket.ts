@@ -2,9 +2,9 @@ import { randomUUID } from 'node:crypto';
 
 import {
   askChatSchema,
+  MAX_MESSAGE_CHARS,
   type JoinSessionPayload,
   type RetryMessagePayload,
-  sessionParamSchema,
   type SendMessagePayload,
   type SocketAck,
   type SyncStatePayload,
@@ -21,6 +21,7 @@ const joinSessionSchema = z.object({
 const retryMessageSchema = z.object({
   sessionId: z.string().uuid(),
   clientMessageId: z.string().min(8).max(100),
+  message: z.string().trim().min(1).max(MAX_MESSAGE_CHARS).optional(),
   provider: z.enum(['GEMINI', 'OPENAI']).optional(),
 });
 const syncStateSchema = z.object({
@@ -32,12 +33,49 @@ const emitAck = (ack: ((payload: SocketAck) => void) | undefined, payload: Socke
   ack?.(payload);
 };
 
+const toAppError = (
+  error: unknown,
+  fallback: {
+    statusCode: number;
+    code: string;
+    message: string;
+  },
+) =>
+  error instanceof AppError
+    ? error
+    : new AppError(fallback.statusCode, fallback.code, fallback.message);
+
 export const registerChatSocketHandlers = (
   io: Server,
   socket: Socket,
   chatService: ChatService,
   auth: { userId: string; sessionId: string },
 ) => {
+  const emitProcessingFailure = (
+    sessionId: string,
+    clientMessageId: string,
+    error: unknown,
+    fallback: {
+      statusCode: number;
+      code: string;
+      message: string;
+    },
+  ) => {
+    const appError = toAppError(error, fallback);
+    io.to(sessionId).emit('chat:message_failed', {
+      sessionId,
+      clientMessageId,
+      error: {
+        code: appError.code,
+        message: appError.message,
+      },
+    });
+    socket.emit('chat:error', {
+      code: appError.code,
+      message: appError.message,
+    });
+  };
+
   socket.on(
     'chat:join_session',
     async (payload: JoinSessionPayload, ack?: (payload: SocketAck) => void) => {
@@ -53,10 +91,11 @@ export const registerChatSocketHandlers = (
           requestId,
         });
       } catch (error) {
-        const appError =
-          error instanceof AppError
-            ? error
-            : new AppError(400, 'SOCKET_JOIN_FAILED', 'Unable to join chat session.');
+        const appError = toAppError(error, {
+          statusCode: 400,
+          code: 'SOCKET_JOIN_FAILED',
+          message: 'Unable to join chat session.',
+        });
 
         emitAck(ack, {
           ok: false,
@@ -64,6 +103,7 @@ export const registerChatSocketHandlers = (
           error: {
             code: appError.code,
             message: appError.message,
+            details: appError.details,
           },
         });
       }
@@ -81,7 +121,8 @@ export const registerChatSocketHandlers = (
 
         emitAck(ack, { ok: true, requestId });
 
-        void chatService.ask(auth.userId, parsed, {
+        void chatService
+          .ask(auth.userId, parsed, {
           onUserMessage: (message) => {
             io.to(parsed.sessionId).emit('chat:message_accepted', {
               sessionId: parsed.sessionId,
@@ -126,12 +167,20 @@ export const registerChatSocketHandlers = (
           onSessionUpdated: (session) => {
             io.to(parsed.sessionId).emit('chat:session_updated', { session });
           },
-        });
+          })
+          .catch((error) => {
+            emitProcessingFailure(parsed.sessionId, parsed.clientMessageId, error, {
+              statusCode: 500,
+              code: 'SOCKET_SEND_PROCESSING_FAILED',
+              message: 'Unable to finish processing this message.',
+            });
+          });
       } catch (error) {
-        const appError =
-          error instanceof AppError
-            ? error
-            : new AppError(400, 'SOCKET_SEND_FAILED', 'Unable to send message.');
+        const appError = toAppError(error, {
+          statusCode: 400,
+          code: 'SOCKET_SEND_FAILED',
+          message: 'Unable to send message.',
+        });
 
         emitAck(ack, {
           ok: false,
@@ -139,6 +188,7 @@ export const registerChatSocketHandlers = (
           error: {
             code: appError.code,
             message: appError.message,
+            details: appError.details,
           },
         });
         socket.emit('chat:error', {
@@ -158,7 +208,8 @@ export const registerChatSocketHandlers = (
         const parsed = retryMessageSchema.parse(payload);
         emitAck(ack, { ok: true, requestId });
 
-        void chatService.retry(auth.userId, parsed, {
+        void chatService
+          .retry(auth.userId, parsed, {
           onAIStart: (meta) => {
             io.to(parsed.sessionId).emit('chat:ai_started', {
               sessionId: parsed.sessionId,
@@ -197,12 +248,20 @@ export const registerChatSocketHandlers = (
           onSessionUpdated: (session) => {
             io.to(parsed.sessionId).emit('chat:session_updated', { session });
           },
-        });
+          })
+          .catch((error) => {
+            emitProcessingFailure(parsed.sessionId, parsed.clientMessageId, error, {
+              statusCode: 500,
+              code: 'SOCKET_RETRY_PROCESSING_FAILED',
+              message: 'Unable to retry this message right now.',
+            });
+          });
       } catch (error) {
-        const appError =
-          error instanceof AppError
-            ? error
-            : new AppError(400, 'SOCKET_RETRY_FAILED', 'Unable to retry message.');
+        const appError = toAppError(error, {
+          statusCode: 400,
+          code: 'SOCKET_RETRY_FAILED',
+          message: 'Unable to retry message.',
+        });
 
         emitAck(ack, {
           ok: false,
@@ -210,6 +269,7 @@ export const registerChatSocketHandlers = (
           error: {
             code: appError.code,
             message: appError.message,
+            details: appError.details,
           },
         });
       }
@@ -239,15 +299,28 @@ export const registerChatSocketHandlers = (
           });
         });
 
+        const cursor = messages.reduce<string | undefined>((latest, message) => {
+          const candidate = message.updatedAt || message.createdAt;
+          if (!latest || candidate > latest) {
+            return candidate;
+          }
+          return latest;
+        }, parsed.since);
+
         emitAck(ack, {
           ok: true,
           requestId,
+          meta: {
+            syncedCount: messages.length,
+            cursor,
+          },
         });
       } catch (error) {
-        const appError =
-          error instanceof AppError
-            ? error
-            : new AppError(400, 'SOCKET_SYNC_FAILED', 'Unable to sync session state.');
+        const appError = toAppError(error, {
+          statusCode: 400,
+          code: 'SOCKET_SYNC_FAILED',
+          message: 'Unable to sync session state.',
+        });
 
         emitAck(ack, {
           ok: false,
@@ -255,6 +328,7 @@ export const registerChatSocketHandlers = (
           error: {
             code: appError.code,
             message: appError.message,
+            details: appError.details,
           },
         });
       }

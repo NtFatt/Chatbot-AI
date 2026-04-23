@@ -1,15 +1,28 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
-import type { ChatMessage, ChatSessionSummary, PaginatedResponse, ProviderKey } from '@chatbot-ai/shared';
+import type {
+  AIChunkEvent,
+  AIDoneEvent,
+  AIStartedEvent,
+  ChatMessage,
+  ChatSessionSummary,
+  MessageAcceptedEvent,
+  MessageFailedEvent,
+  PaginatedResponse,
+  ProviderKey,
+  SendMessagePayload,
+} from '@chatbot-ai/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { askViaHttp } from '../services/chat-service';
 import { chatSocketClient } from '../services/socket-client';
 import { useAuthStore } from '../store/auth-store';
+import { getTransportErrorInfo } from '../utils/transport-errors';
 import { queryKeys } from '../utils/query-keys';
 
 type ConnectionState = 'connected' | 'reconnecting' | 'disconnected';
+type RecoveryState = 'idle' | 'syncing' | 'error';
 
 const assistantClientId = (clientMessageId: string) => `${clientMessageId}:assistant`;
 
@@ -58,15 +71,27 @@ const optimisticMessage = (
     model: input.model ?? null,
     latencyMs: input.latencyMs ?? null,
     errorCode: input.errorCode ?? null,
-    createdAt: now,
-    updatedAt: now,
+    createdAt: input.createdAt ?? now,
+    updatedAt: input.updatedAt ?? now,
   };
 };
+
+const getLatestSyncCursor = (messages: ChatMessage[]) =>
+  messages.reduce<string | undefined>((cursor, message) => {
+    const candidate = message.updatedAt || message.createdAt;
+    if (!cursor || candidate > cursor) {
+      return candidate;
+    }
+    return cursor;
+  }, undefined);
 
 export const useChatSocket = (sessionId: string | null) => {
   const queryClient = useQueryClient();
   const accessToken = useAuthStore((state) => state.accessToken);
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
+  const [recoveryState, setRecoveryState] = useState<RecoveryState>('idle');
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const activeSessionIdRef = useRef<string | null>(sessionId);
 
   const socket = useMemo(() => {
     if (!accessToken) {
@@ -77,16 +102,128 @@ export const useChatSocket = (sessionId: string | null) => {
   }, [accessToken]);
 
   useEffect(() => {
-    if (!socket) {
-      setConnectionState('disconnected');
+    activeSessionIdRef.current = sessionId;
+  }, [sessionId]);
+
+  const markStreamingMessagesForRecovery = (targetSessionId: string) => {
+    queryClient.setQueryData<PaginatedResponse<ChatMessage>>(
+      queryKeys.messages(targetSessionId),
+      (previous) =>
+        updateMessageList(previous, (items) =>
+          items.map((message) =>
+            message.status === 'streaming'
+              ? {
+                  ...message,
+                  status: 'needs_sync',
+                }
+              : message,
+          ),
+        ),
+    );
+  };
+
+  const restoreRecoveringMessages = (targetSessionId: string) => {
+    queryClient.setQueryData<PaginatedResponse<ChatMessage>>(
+      queryKeys.messages(targetSessionId),
+      (previous) =>
+        updateMessageList(previous, (items) =>
+          items.map((message) =>
+            message.status === 'needs_sync'
+              ? {
+                  ...message,
+                  status: 'streaming',
+                }
+              : message,
+          ),
+        ),
+    );
+  };
+
+  const markRequestFailed = (targetSessionId: string, clientMessageId: string, errorCode?: string) => {
+    queryClient.setQueryData<PaginatedResponse<ChatMessage>>(
+      queryKeys.messages(targetSessionId),
+      (previous) =>
+        updateMessageList(previous, (items) =>
+          items.map((message) => {
+            if (
+              message.clientMessageId === clientMessageId ||
+              message.clientMessageId === assistantClientId(clientMessageId)
+            ) {
+              return {
+                ...message,
+                status: 'failed',
+                errorCode: errorCode ?? message.errorCode,
+              };
+            }
+
+            return message;
+          }),
+        ),
+    );
+  };
+
+  const runSessionRecovery = async (targetSessionId: string) => {
+    if (!socket?.connected) {
       return;
     }
 
-    const handleConnect = () => setConnectionState('connected');
-    const handleDisconnect = () => setConnectionState('disconnected');
-    const handleReconnectAttempt = () => setConnectionState('reconnecting');
+    setRecoveryState('syncing');
+    setRecoveryError(null);
 
-    const handleMessageAccepted = (event: { sessionId: string; message: ChatMessage }) => {
+    try {
+      const messages =
+        queryClient.getQueryData<PaginatedResponse<ChatMessage>>(queryKeys.messages(targetSessionId))
+          ?.items ?? [];
+      const since = getLatestSyncCursor(messages);
+
+      await chatSocketClient.emitOrThrow('chat:join_session', { sessionId: targetSessionId });
+      await chatSocketClient.emitOrThrow('chat:sync_state', {
+        sessionId: targetSessionId,
+        since,
+      });
+
+      restoreRecoveringMessages(targetSessionId);
+      setRecoveryState('idle');
+    } catch (error) {
+      const info = getTransportErrorInfo(error, 'Không thể đồng bộ lại phiên chat.');
+      setRecoveryError(info.message);
+      setRecoveryState('error');
+    }
+  };
+
+  useEffect(() => {
+    if (!socket) {
+      setConnectionState('disconnected');
+      setRecoveryState('idle');
+      setRecoveryError(null);
+      return;
+    }
+
+    const handleConnect = () => {
+      setConnectionState('connected');
+      const nextSessionId = activeSessionIdRef.current;
+      if (nextSessionId) {
+        void runSessionRecovery(nextSessionId);
+      }
+    };
+
+    const handleDisconnect = () => {
+      setConnectionState('disconnected');
+      const nextSessionId = activeSessionIdRef.current;
+      if (nextSessionId) {
+        markStreamingMessagesForRecovery(nextSessionId);
+      }
+    };
+
+    const handleReconnectAttempt = () => {
+      setConnectionState('reconnecting');
+    };
+
+    const handleConnectError = () => {
+      setConnectionState('disconnected');
+    };
+
+    const handleMessageAccepted = (event: MessageAcceptedEvent) => {
       queryClient.setQueryData<PaginatedResponse<ChatMessage>>(
         queryKeys.messages(event.sessionId),
         (previous) => updateMessageList(previous, (items) => upsertMessage(items, event.message)),
@@ -94,19 +231,14 @@ export const useChatSocket = (sessionId: string | null) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
     };
 
-    const handleMessageReceived = (event: { sessionId: string; message: ChatMessage }) => {
+    const handleMessageReceived = (event: MessageAcceptedEvent) => {
       queryClient.setQueryData<PaginatedResponse<ChatMessage>>(
         queryKeys.messages(event.sessionId),
         (previous) => updateMessageList(previous, (items) => upsertMessage(items, event.message)),
       );
     };
 
-    const handleAIStarted = (event: {
-      sessionId: string;
-      clientMessageId: string;
-      provider: ProviderKey;
-      model: string;
-    }) => {
+    const handleAIStarted = (event: AIStartedEvent) => {
       queryClient.setQueryData<PaginatedResponse<ChatMessage>>(
         queryKeys.messages(event.sessionId),
         (previous) =>
@@ -127,13 +259,7 @@ export const useChatSocket = (sessionId: string | null) => {
       );
     };
 
-    const handleAIChunk = (event: {
-      sessionId: string;
-      clientMessageId: string;
-      chunk: string;
-      provider: ProviderKey;
-      model: string;
-    }) => {
+    const handleAIChunk = (event: AIChunkEvent) => {
       queryClient.setQueryData<PaginatedResponse<ChatMessage>>(
         queryKeys.messages(event.sessionId),
         (previous) =>
@@ -152,17 +278,15 @@ export const useChatSocket = (sessionId: string | null) => {
                 status: 'streaming',
                 provider: event.provider,
                 model: event.model,
+                createdAt: target?.createdAt,
+                updatedAt: new Date().toISOString(),
               }),
             );
           }),
       );
     };
 
-    const handleAIDone = (event: {
-      sessionId: string;
-      userMessage: ChatMessage;
-      assistantMessage: ChatMessage;
-    }) => {
+    const handleAIDone = (event: AIDoneEvent) => {
       queryClient.setQueryData<PaginatedResponse<ChatMessage>>(
         queryKeys.messages(event.sessionId),
         (previous) =>
@@ -175,13 +299,11 @@ export const useChatSocket = (sessionId: string | null) => {
         queryKey: queryKeys.recommendations(event.sessionId, ''),
         exact: false,
       });
+      setRecoveryState('idle');
+      setRecoveryError(null);
     };
 
-    const handleMessageFailed = (event: {
-      sessionId: string;
-      clientMessageId: string;
-      error: { code: string; message: string };
-    }) => {
+    const handleMessageFailed = (event: MessageFailedEvent) => {
       queryClient.setQueryData<PaginatedResponse<ChatMessage>>(
         queryKeys.messages(event.sessionId),
         (previous) =>
@@ -199,7 +321,15 @@ export const useChatSocket = (sessionId: string | null) => {
               : items;
           }),
       );
-      toast.error(event.error.message);
+      const info = getTransportErrorInfo(
+        {
+          message: event.error.message,
+        },
+        event.error.message,
+      );
+      toast.error(info.message, {
+        description: event.error.code ? `Mã lỗi: ${event.error.code}` : undefined,
+      });
     };
 
     const handleSessionUpdated = (event: { session: ChatSessionSummary }) => {
@@ -224,8 +354,15 @@ export const useChatSocket = (sessionId: string | null) => {
       );
     };
 
+    const handleChatError = (event: { code?: string; message?: string }) => {
+      toast.error(event.message ?? 'Kết nối realtime vừa gặp lỗi.', {
+        description: event.code ? `Mã lỗi: ${event.code}` : undefined,
+      });
+    };
+
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
+    socket.on('connect_error', handleConnectError);
     socket.io.on('reconnect_attempt', handleReconnectAttempt);
     socket.on('chat:message_accepted', handleMessageAccepted);
     socket.on('chat:message_received', handleMessageReceived);
@@ -234,10 +371,12 @@ export const useChatSocket = (sessionId: string | null) => {
     socket.on('chat:ai_done', handleAIDone);
     socket.on('chat:message_failed', handleMessageFailed);
     socket.on('chat:session_updated', handleSessionUpdated);
+    socket.on('chat:error', handleChatError);
 
     return () => {
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
+      socket.off('connect_error', handleConnectError);
       socket.io.off('reconnect_attempt', handleReconnectAttempt);
       socket.off('chat:message_accepted', handleMessageAccepted);
       socket.off('chat:message_received', handleMessageReceived);
@@ -246,33 +385,19 @@ export const useChatSocket = (sessionId: string | null) => {
       socket.off('chat:ai_done', handleAIDone);
       socket.off('chat:message_failed', handleMessageFailed);
       socket.off('chat:session_updated', handleSessionUpdated);
+      socket.off('chat:error', handleChatError);
     };
   }, [queryClient, socket]);
 
   useEffect(() => {
-    if (!socket || !sessionId) {
+    if (!socket || !sessionId || !socket.connected) {
       return;
     }
 
-    const latestMessage = queryClient.getQueryData<PaginatedResponse<ChatMessage>>(
-      queryKeys.messages(sessionId),
-    )?.items.at(-1);
-
-    void chatSocketClient.emitWithAck('chat:join_session', { sessionId }).catch(() => undefined);
-    void chatSocketClient
-      .emitWithAck('chat:sync_state', {
-        sessionId,
-        since: latestMessage?.createdAt,
-      })
-      .catch(() => undefined);
+    void runSessionRecovery(sessionId);
   }, [queryClient, sessionId, socket]);
 
-  const sendMessage = async (input: {
-    sessionId: string;
-    clientMessageId: string;
-    message: string;
-    provider?: ProviderKey;
-  }) => {
+  const sendMessage = async (input: SendMessagePayload) => {
     const optimisticUser = optimisticMessage({
       sessionId: input.sessionId,
       clientMessageId: input.clientMessageId,
@@ -297,21 +422,30 @@ export const useChatSocket = (sessionId: string | null) => {
     );
 
     if (socket?.connected) {
-      const ack = await chatSocketClient.emitWithAck('chat:send_message', input);
-      if (!ack.ok) {
-        throw new Error(ack.error?.message ?? 'Unable to send message.');
+      try {
+        await chatSocketClient.emitOrThrow('chat:send_message', input);
+        return;
+      } catch (error) {
+        const info = getTransportErrorInfo(error, 'Không thể gửi câu hỏi lúc này.');
+        markRequestFailed(input.sessionId, input.clientMessageId, info.code);
+        throw error;
       }
-      return;
     }
 
-    const fallback = await askViaHttp(input);
-    queryClient.setQueryData<PaginatedResponse<ChatMessage>>(
-      queryKeys.messages(input.sessionId),
-      (previous) =>
-        updateMessageList(previous, (items) =>
-          upsertMessage(upsertMessage(items, fallback.userMessage), fallback.assistantMessage),
-        ),
-    );
+    try {
+      const fallback = await askViaHttp(input);
+      queryClient.setQueryData<PaginatedResponse<ChatMessage>>(
+        queryKeys.messages(input.sessionId),
+        (previous) =>
+          updateMessageList(previous, (items) =>
+            upsertMessage(upsertMessage(items, fallback.userMessage), fallback.assistantMessage),
+          ),
+      );
+    } catch (error) {
+      const info = getTransportErrorInfo(error, 'Không thể gửi câu hỏi lúc này.');
+      markRequestFailed(input.sessionId, input.clientMessageId, info.code);
+      throw error;
+    }
   };
 
   const retryMessage = async (input: {
@@ -327,43 +461,67 @@ export const useChatSocket = (sessionId: string | null) => {
           const assistant = items.find(
             (item) => item.clientMessageId === assistantClientId(input.clientMessageId),
           );
+          const user = items.find((item) => item.clientMessageId === input.clientMessageId);
 
-          return assistant
-            ? upsertMessage(items, {
-                ...assistant,
-                content: '',
-                status: 'streaming',
-                errorCode: null,
-              })
-            : items;
+          let nextItems = items;
+
+          if (assistant) {
+            nextItems = upsertMessage(nextItems, {
+              ...assistant,
+              content: '',
+              status: 'streaming',
+              errorCode: null,
+            });
+          }
+
+          if (user) {
+            nextItems = upsertMessage(nextItems, {
+              ...user,
+              status: 'sending',
+              errorCode: null,
+            });
+          }
+
+          return nextItems;
         }),
     );
 
     if (socket?.connected) {
-      const ack = await chatSocketClient.emitWithAck('chat:retry_message', {
-        sessionId: input.sessionId,
-        clientMessageId: input.clientMessageId,
-        provider: input.provider,
-      });
-
-      if (!ack.ok) {
-        throw new Error(ack.error?.message ?? 'Unable to retry message.');
+      try {
+        await chatSocketClient.emitOrThrow('chat:retry_message', {
+          sessionId: input.sessionId,
+          clientMessageId: input.clientMessageId,
+          message: input.message,
+          provider: input.provider,
+        });
+        return;
+      } catch (error) {
+        const info = getTransportErrorInfo(error, 'Chưa thể gửi lại câu hỏi này.');
+        markRequestFailed(input.sessionId, input.clientMessageId, info.code);
+        throw error;
       }
-      return;
     }
 
-    const fallback = await askViaHttp(input);
-    queryClient.setQueryData<PaginatedResponse<ChatMessage>>(
-      queryKeys.messages(input.sessionId),
-      (previous) =>
-        updateMessageList(previous, (items) =>
-          upsertMessage(upsertMessage(items, fallback.userMessage), fallback.assistantMessage),
-        ),
-    );
+    try {
+      const fallback = await askViaHttp(input);
+      queryClient.setQueryData<PaginatedResponse<ChatMessage>>(
+        queryKeys.messages(input.sessionId),
+        (previous) =>
+          updateMessageList(previous, (items) =>
+            upsertMessage(upsertMessage(items, fallback.userMessage), fallback.assistantMessage),
+          ),
+      );
+    } catch (error) {
+      const info = getTransportErrorInfo(error, 'Chưa thể gửi lại câu hỏi này.');
+      markRequestFailed(input.sessionId, input.clientMessageId, info.code);
+      throw error;
+    }
   };
 
   return {
     connectionState,
+    recoveryError,
+    recoveryState,
     sendMessage,
     retryMessage,
   };

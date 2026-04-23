@@ -53,6 +53,7 @@ export const ChatComposer = ({
           ref={textareaRef}
           aria-label="Khung nhập câu hỏi"
           className="composer-scrollbar focus-ring min-h-[72px] max-h-[180px] w-full resize-none overflow-y-auto bg-transparent pr-2 text-[15px] leading-7 text-ink placeholder:text-ink/42 disabled:cursor-not-allowed dark:text-slate-100 dark:placeholder:text-slate-500"
+          data-testid="chat-composer-input"
           disabled={disabled || submitting}
           maxLength={MAX_MESSAGE_CHARS}
           onChange={(event) => setValue(event.target.value)}
@@ -76,6 +77,7 @@ export const ChatComposer = ({
             <Button
               aria-label="Gửi câu hỏi"
               className="h-10 min-w-[42px] rounded-full bg-gradient-to-r from-ocean to-cyan px-4 text-white shadow-[0_16px_30px_rgba(12,109,122,0.16)] dark:text-white"
+              data-testid="chat-send-button"
               disabled={disabled || submitting || !value.trim()}
               onClick={() => void submit()}
               type="button"

@@ -7,6 +7,11 @@ export interface SocketAck {
   error?: {
     code: string;
     message: string;
+    details?: unknown;
+  };
+  meta?: {
+    syncedCount?: number;
+    cursor?: string;
   };
 }
 
@@ -17,17 +22,20 @@ export interface JoinSessionPayload {
 export interface SendMessagePayload {
   sessionId: string;
   clientMessageId: string;
-  content: string;
+  message: string;
   provider?: ProviderKey;
 }
 
 export interface RetryMessagePayload {
   sessionId: string;
   clientMessageId: string;
+  message?: string;
+  provider?: ProviderKey;
 }
 
 export interface SyncStatePayload {
   sessionId: string;
+  // ISO timestamp cursor based on the latest message update seen by the client.
   since?: string;
 }
 
@@ -52,6 +60,8 @@ export interface AIChunkEvent {
   sessionId: string;
   clientMessageId: string;
   chunk: string;
+  provider: ProviderKey;
+  model: string;
 }
 
 export interface AIDoneEvent {

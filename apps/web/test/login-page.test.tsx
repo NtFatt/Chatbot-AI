@@ -12,7 +12,7 @@ describe('LoginPage', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText(/Quick entry/i)).toBeTruthy();
-    expect(screen.getByText(/Chatbot AI hoc tap/i)).toBeTruthy();
+    expect(screen.getByText(/Vào nhanh/i)).toBeTruthy();
+    expect(screen.getByText(/Chatbot AI học tập \/ Study copilot/i)).toBeTruthy();
   });
 });

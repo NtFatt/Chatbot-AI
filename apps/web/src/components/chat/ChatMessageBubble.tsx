@@ -19,6 +19,8 @@ export const ChatMessageBubble = ({
       ? 'AI đang trả lời...'
       : message.status === 'sending'
         ? 'Đang gửi câu hỏi...'
+        : message.status === 'needs_sync'
+          ? 'Đang đồng bộ lại...'
         : message.status === 'failed'
           ? 'Gửi thất bại'
           : null;
@@ -32,6 +34,9 @@ export const ChatMessageBubble = ({
             ? 'border border-black/6 bg-white/88 text-ink dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-100'
             : 'max-w-[min(760px,82%)] bg-gradient-to-br from-cyan to-ocean text-white',
         )}
+        data-message-status={message.status}
+        data-message-type={message.senderType}
+        data-testid={`message-${message.clientMessageId}`}
       >
         <div className="mb-2.5 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.17em] text-current/60">
           <span>{isAssistant ? 'Study AI' : 'You'}</span>
@@ -70,6 +75,7 @@ export const ChatMessageBubble = ({
               {onRetry && message.senderType === 'assistant' ? (
                 <button
                   className="focus-ring inline-flex items-center gap-1 rounded-full border border-current/15 px-2.5 py-1 font-medium"
+                  data-testid={`retry-${message.clientMessageId}`}
                   onClick={() => onRetry(message)}
                   type="button"
                 >

@@ -25,7 +25,7 @@ export const SessionSidebar = ({
     <aside className="glass-panel flex h-full min-h-0 flex-col overflow-hidden p-4">
       <div className="mb-4 shrink-0 flex items-center justify-between gap-3">
         <p className="font-display text-[34px] font-semibold leading-none tracking-[-0.05em]">Chat</p>
-        <Button className="gap-2 px-4 py-2.5 text-sm" onClick={onCreate} type="button">
+        <Button className="gap-2 px-4 py-2.5 text-sm" data-testid="create-session" onClick={onCreate} type="button">
           <Plus className="h-4 w-4" />
           Mới
         </Button>
@@ -52,6 +52,7 @@ export const SessionSidebar = ({
                   : 'border-black/5 bg-white/70 hover:border-black/10 hover:bg-white dark:border-white/8 dark:bg-slate-900/55 dark:hover:bg-slate-900/80',
               )}
               key={session.id}
+              data-testid={`session-item-${session.id}`}
               onClick={() => onSelect(session.id)}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
@@ -87,6 +88,7 @@ export const SessionSidebar = ({
                 <button
                   aria-label={`Xóa phiên ${session.title}`}
                   className="focus-ring inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] text-current/72 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100"
+                  data-testid={`delete-session-${session.id}`}
                   onClick={(event) => {
                     event.stopPropagation();
                     onDelete(session.id);
@@ -105,6 +107,7 @@ export const SessionSidebar = ({
       <div className="mt-4 shrink-0 border-t border-black/5 pt-4 dark:border-white/10">
         <button
           className="focus-ring flex w-full items-center gap-3 rounded-[20px] border border-black/8 bg-white/72 px-3.5 py-3 text-left transition hover:border-black/12 hover:bg-white dark:border-white/10 dark:bg-slate-900/55 dark:hover:bg-slate-900/75"
+          data-testid="open-settings"
           onClick={onOpenSettings}
           type="button"
         >

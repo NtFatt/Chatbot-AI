@@ -23,6 +23,7 @@ import { recommendMaterials } from '../../services/materials-service';
 import { fetchProviders, testProviders } from '../../services/providers-service';
 import { useAuthStore } from '../../store/auth-store';
 import { useUiStore } from '../../store/ui-store';
+import { getTransportErrorInfo, toPanelError } from '../../utils/transport-errors';
 import { queryKeys } from '../../utils/query-keys';
 
 const createClientMessageId = () => crypto.randomUUID();
@@ -81,16 +82,24 @@ export const DashboardPage = () => {
   const currentSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
   const messages = messagesQuery.data?.items ?? [];
   const providerOptions =
-    providersQuery.data?.providers.filter((provider) => provider.enabled).map((provider) => provider.key) ??
-    ['GEMINI', 'OPENAI'];
+    providersQuery.data?.providers.map((provider) => provider.key) ?? ['GEMINI', 'OPENAI'];
   const hasExternalProviders =
     (providersQuery.data?.providers.filter((provider) => provider.enabled).length ?? 0) > 0;
   const activeProvider = currentSession?.providerPreference ?? providersQuery.data?.defaultProvider ?? 'GEMINI';
-  const recommendationsError =
-    recommendationsQuery.error instanceof Error ? recommendationsQuery.error.message : null;
+  const recommendationsError = recommendationsQuery.error
+    ? toPanelError(recommendationsQuery.error, 'Không tải được gợi ý tài liệu lúc này.')
+    : null;
+  const providerDiagnosticsError = providerDiagnosticsQuery.error
+    ? toPanelError(providerDiagnosticsQuery.error, 'Không kiểm tra được trạng thái provider lúc này.')
+    : null;
+  const messagesError = messagesQuery.error
+    ? toPanelError(messagesQuery.error, 'Hãy mở lại cuộc trò chuyện hoặc tải lại trang.')
+    : null;
   const isStreaming = messages.some((message) => message.status === 'streaming');
 
-  const { connectionState, retryMessage, sendMessage } = useChatSocket(selectedSessionId);
+  const { connectionState, recoveryError, recoveryState, retryMessage, sendMessage } = useChatSocket(
+    selectedSessionId,
+  );
 
   const createSessionMutation = useMutation({
     mutationFn: (providerPreference: ProviderKey) => createSession({ providerPreference }),
@@ -204,7 +213,10 @@ export const DashboardPage = () => {
         provider: activeProvider,
       });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Không thể gửi câu hỏi lúc này.');
+      const info = getTransportErrorInfo(error, 'Không thể gửi câu hỏi lúc này.');
+      toast.error(info.message, {
+        description: info.description,
+      });
     }
   };
 
@@ -240,7 +252,10 @@ export const DashboardPage = () => {
         provider: activeProvider,
       });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Thử gửi lại chưa thành công.');
+      const info = getTransportErrorInfo(error, 'Thử gửi lại chưa thành công.');
+      toast.error(info.message, {
+        description: info.description,
+      });
     }
   };
 
@@ -271,7 +286,48 @@ export const DashboardPage = () => {
               <Menu className="h-4 w-4" />
             </button>
 
-            <div className="app-scrollbar min-h-0 flex-1 overflow-y-auto pb-4 pr-1.5 pt-12 xl:pt-1" ref={messagesViewportRef}>
+            {currentSession && (connectionState !== 'connected' || recoveryState !== 'idle') ? (
+              <div
+                className="mb-2 shrink-0 rounded-[18px] border border-black/8 bg-white/82 px-4 py-3 text-sm leading-6 dark:border-white/10 dark:bg-slate-900/72"
+                data-testid="connection-banner"
+              >
+                <p className="font-medium">
+                  {connectionState === 'reconnecting'
+                    ? 'Đang kết nối lại realtime'
+                    : connectionState === 'disconnected'
+                      ? 'Realtime đang gián đoạn'
+                      : recoveryState === 'syncing'
+                        ? 'Đang đồng bộ lại phiên chat'
+                        : 'Cần kiểm tra lại trạng thái kết nối'}
+                </p>
+                <p className="mt-1 text-ink/65 dark:text-slate-300">
+                  {connectionState === 'connected'
+                    ? 'Các tin nhắn gần nhất đang được đối chiếu lại để tránh thiếu hoặc trùng dữ liệu.'
+                    : 'Bạn vẫn có thể gửi qua chế độ dự phòng HTTP, nhưng lịch sử realtime sẽ được đồng bộ lại khi kết nối ổn định.'}
+                </p>
+                {recoveryError ? (
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-300">{recoveryError}</p>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div
+              className="app-scrollbar min-h-0 flex-1 overflow-y-auto pb-4 pr-1.5 pt-12 xl:pt-1"
+              data-testid="chat-messages"
+              ref={messagesViewportRef}
+            >
+              {!messagesQuery.isLoading && messagesError ? (
+                <div className="mb-4 rounded-[24px] border border-red-500/20 bg-red-500/5 px-4 py-4 text-sm dark:border-red-500/25">
+                  <p className="font-medium text-red-600 dark:text-red-300">Không tải được lịch sử tin nhắn</p>
+                  <p className="mt-2 leading-6 text-ink/72 dark:text-slate-300">{messagesError.message}</p>
+                  {messagesError.meta ? (
+                    <p className="mt-2 text-xs uppercase tracking-[0.14em] text-ink/48 dark:text-slate-500">
+                      {messagesError.meta}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+
               {messagesQuery.isLoading ? (
                 <div className="w-full space-y-4">
                   {Array.from({ length: 4 }).map((_, index) => (
@@ -314,12 +370,12 @@ export const DashboardPage = () => {
         connectionState={connectionState}
         currentSession={currentSession}
         diagnostics={providerDiagnosticsQuery.data ?? null}
-        diagnosticsError={
-          providerDiagnosticsQuery.error instanceof Error ? providerDiagnosticsQuery.error.message : null
-        }
+        diagnosticsError={providerDiagnosticsError?.message ?? null}
+        diagnosticsMeta={providerDiagnosticsError?.meta ?? null}
         diagnosticsLoading={providerDiagnosticsQuery.isFetching}
         draftTitle={draftTitle}
-        errorMessage={recommendationsError}
+        errorMessage={recommendationsError?.message ?? null}
+        errorMeta={recommendationsError?.meta ?? null}
         hasExternalProviders={hasExternalProviders}
         isLoading={recommendationsQuery.isLoading}
         isOpen={settingsOpen}

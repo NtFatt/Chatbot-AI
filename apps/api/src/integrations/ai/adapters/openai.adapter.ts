@@ -1,4 +1,9 @@
 import OpenAI from 'openai';
+import type {
+  Response,
+  ResponseCreateParamsStreaming,
+  ResponseStreamEvent,
+} from 'openai/resources/responses/responses';
 
 import type { AIProvider, AIProviderRequest, AIProviderResponse } from '../ai.types';
 
@@ -21,39 +26,60 @@ export class OpenAIAdapter implements AIProvider {
     const timeout = setTimeout(() => controller.abort(), request.timeoutMs);
 
     try {
-      const response = await this.client.responses.create(
-        {
-          model: request.model,
-          input: [
-            {
-              role: 'system',
-              content: [{ type: 'input_text', text: request.systemPrompt }],
-            },
-            ...request.messages.map((message) => ({
-              role: message.role,
-              content: [{ type: 'input_text', text: message.content }],
-            })),
-          ],
-        } as never,
-        {
-          signal: controller.signal,
-        },
-      );
+      const streamRequest: ResponseCreateParamsStreaming = {
+        model: request.model,
+        stream: true,
+        instructions: request.systemPrompt,
+        input: request.messages.map((message) => ({
+          role: message.role,
+          content: message.content,
+        })),
+      };
 
-      const text = response.output_text ?? '';
-      if (text) {
-        callbacks?.onChunk?.(text);
+      const stream = await this.client.responses.create(streamRequest, {
+        signal: controller.signal,
+      });
+
+      let text = '';
+      let finalResponse: Response | null = null;
+
+      for await (const event of stream as AsyncIterable<ResponseStreamEvent>) {
+        if (event.type === 'response.output_text.delta' && event.delta) {
+          text += event.delta;
+          callbacks?.onChunk?.(event.delta);
+        }
+
+        if (event.type === 'response.output_text.done' && !text && event.text) {
+          text = event.text;
+        }
+
+        if (event.type === 'response.completed') {
+          finalResponse = event.response;
+        }
+
+        if (event.type === 'response.failed') {
+          throw new Error(event.response.error?.message || 'OPENAI_RESPONSE_FAILED');
+        }
       }
 
+      const resolvedText = finalResponse?.output_text?.trim() || text.trim();
+
       return {
-        text,
-        finishReason: response.status === 'completed' ? 'stop' : 'unknown',
+        text: resolvedText,
+        finishReason:
+          finalResponse?.status === 'completed'
+            ? 'stop'
+            : finalResponse?.status === 'incomplete'
+              ? 'length'
+              : finalResponse?.status === 'failed'
+                ? 'error'
+                : 'unknown',
         latencyMs: Date.now() - startedAt,
-        usage: response.usage
+        usage: finalResponse?.usage
           ? {
-              inputTokens: response.usage.input_tokens,
-              outputTokens: response.usage.output_tokens,
-              totalTokens: response.usage.total_tokens,
+              inputTokens: finalResponse.usage.input_tokens,
+              outputTokens: finalResponse.usage.output_tokens,
+              totalTokens: finalResponse.usage.total_tokens,
             }
           : undefined,
       };

@@ -53,6 +53,12 @@ export class ChatService {
     return `${clientMessageId}:assistant`;
   }
 
+  private normalizeRetryClientMessageId(clientMessageId: string) {
+    return clientMessageId.endsWith(':assistant')
+      ? clientMessageId.slice(0, -':assistant'.length)
+      : clientMessageId;
+  }
+
   private async ensureSession(sessionId: string, userId: string) {
     const session = await this.chatRepository.findSessionById(sessionId, userId);
     if (!session) {
@@ -305,12 +311,19 @@ export class ChatService {
     payload: {
       sessionId: string;
       clientMessageId: string;
+      message?: string;
       provider?: ProviderKey;
     },
     callbacks?: Parameters<ChatService['ask']>[2],
   ) {
-    const message = await this.chatRepository.findMessageByClientMessageId(payload.clientMessageId);
-    if (!message || message.sessionId !== payload.sessionId || message.senderType !== 'user') {
+    const normalizedClientMessageId = this.normalizeRetryClientMessageId(payload.clientMessageId);
+    const message = await this.chatRepository.findMessageByClientMessageId(normalizedClientMessageId);
+    const retryContent =
+      message && message.sessionId === payload.sessionId && message.senderType === 'user'
+        ? message.content
+        : payload.message?.trim();
+
+    if (!retryContent) {
       throw new AppError(404, 'MESSAGE_NOT_FOUND', 'Original user message not found.');
     }
 
@@ -318,8 +331,8 @@ export class ChatService {
       userId,
       {
         sessionId: payload.sessionId,
-        clientMessageId: payload.clientMessageId,
-        message: message.content,
+        clientMessageId: normalizedClientMessageId,
+        message: retryContent,
         provider: payload.provider,
       },
       callbacks,

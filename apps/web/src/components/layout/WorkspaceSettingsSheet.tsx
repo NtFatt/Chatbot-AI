@@ -34,9 +34,11 @@ export const WorkspaceSettingsSheet = ({
   currentSession,
   diagnostics,
   diagnosticsError,
+  diagnosticsMeta,
   diagnosticsLoading,
   draftTitle,
   errorMessage,
+  errorMeta,
   hasExternalProviders,
   isLoading,
   isOpen,
@@ -60,9 +62,11 @@ export const WorkspaceSettingsSheet = ({
   currentSession: ChatSessionSummary | null;
   diagnostics: ProviderDiagnosticsResponse | null;
   diagnosticsError?: string | null;
+  diagnosticsMeta?: string | null;
   diagnosticsLoading: boolean;
   draftTitle: string;
   errorMessage?: string | null;
+  errorMeta?: string | null;
   hasExternalProviders: boolean;
   isLoading: boolean;
   isOpen: boolean;
@@ -116,7 +120,7 @@ export const WorkspaceSettingsSheet = ({
       : 'Thiếu cấu hình';
 
   return (
-    <div aria-modal="true" className="fixed inset-0 z-50 flex justify-end" role="dialog">
+    <div aria-modal="true" className="fixed inset-0 z-50 flex justify-end" data-testid="settings-sheet" role="dialog">
       <button
         aria-label="Đóng bảng cài đặt"
         className="absolute inset-0 bg-slate-950/24 backdrop-blur-[2px]"
@@ -188,6 +192,7 @@ export const WorkspaceSettingsSheet = ({
                 </div>
                 <Button
                   className="h-10 bg-white/85 px-4 text-ink dark:bg-slate-950/80 dark:text-white"
+                  data-testid="run-provider-diagnostics"
                   onClick={onRunDiagnostics}
                   type="button"
                 >
@@ -196,7 +201,14 @@ export const WorkspaceSettingsSheet = ({
               </div>
 
               {diagnosticsError ? (
-                <p className="mt-3 text-sm leading-6 text-red-600 dark:text-red-300">{diagnosticsError}</p>
+                <div className="mt-3 rounded-[16px] border border-red-500/20 bg-red-500/6 px-3 py-3">
+                  <p className="text-sm leading-6 text-red-600 dark:text-red-300">{diagnosticsError}</p>
+                  {diagnosticsMeta ? (
+                    <p className="mt-2 text-[11px] uppercase tracking-[0.14em] text-red-500/85 dark:text-red-300/80">
+                      {diagnosticsMeta}
+                    </p>
+                  ) : null}
+                </div>
               ) : null}
 
               {diagnostics ? (
@@ -281,31 +293,31 @@ export const WorkspaceSettingsSheet = ({
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink/55 dark:text-slate-400">
                 Provider trả lời
               </p>
-              {hasExternalProviders ? (
-                <>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {providerOptions.map((provider) => (
-                      <button
-                        className={cn(
-                          'focus-ring rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition',
-                          provider === activeProvider
-                            ? 'border-transparent bg-ink text-white dark:bg-white dark:text-ink'
-                            : 'border-black/10 bg-white/60 text-ink/72 dark:border-white/10 dark:bg-slate-900/50 dark:text-slate-300',
-                        )}
-                        disabled={!currentSession}
-                        key={provider}
-                        onClick={() => onProviderChange(provider)}
-                        type="button"
-                      >
-                        {provider}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="mt-3 text-xs leading-6 text-ink/55 dark:text-slate-400">
-                    {providerDescriptions[activeProvider]}
-                  </p>
-                </>
-              ) : (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {providerOptions.map((provider) => (
+                  <button
+                    className={cn(
+                      'focus-ring rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition',
+                      provider === activeProvider
+                        ? 'border-transparent bg-ink text-white dark:bg-white dark:text-ink'
+                        : 'border-black/10 bg-white/60 text-ink/72 dark:border-white/10 dark:bg-slate-900/50 dark:text-slate-300',
+                    )}
+                    disabled={!currentSession}
+                    data-testid={`provider-option-${provider}`}
+                    key={provider}
+                    onClick={() => onProviderChange(provider)}
+                    type="button"
+                  >
+                    {provider}
+                  </button>
+                ))}
+              </div>
+
+              <p className="mt-3 text-xs leading-6 text-ink/55 dark:text-slate-400">
+                {providerDescriptions[activeProvider]}
+              </p>
+
+              {!hasExternalProviders ? (
                 <div className="mt-3 rounded-[22px] border border-amber-500/20 bg-amber-500/8 px-4 py-4 text-sm leading-6 text-amber-700 dark:text-amber-300">
                   <p className="font-medium">Đang dùng local fallback</p>
                   <p className="mt-2">
@@ -313,8 +325,11 @@ export const WorkspaceSettingsSheet = ({
                     <code className="rounded bg-black/5 px-1.5 py-0.5 text-[12px] dark:bg-white/10">OPENAI_API_KEY</code> vào{' '}
                     <code className="rounded bg-black/5 px-1.5 py-0.5 text-[12px] dark:bg-white/10">apps/api/.env</code> để dùng provider thật.
                   </p>
+                  <p className="mt-2 text-xs leading-5 text-amber-700/80 dark:text-amber-200/80">
+                    Bạn vẫn có thể đổi provider ưu tiên cho phiên này ngay từ bây giờ. Cài đặt đó sẽ được áp dụng tự động khi provider thật sẵn sàng.
+                  </p>
                 </div>
-              )}
+              ) : null}
             </div>
 
             <div className="mt-5 grid gap-2">
@@ -368,6 +383,7 @@ export const WorkspaceSettingsSheet = ({
             <div className="min-h-0">
               <MaterialsPanel
                 errorMessage={errorMessage}
+                errorMeta={errorMeta}
                 isLoading={isLoading}
                 materials={materials}
                 onRetry={onRetry}

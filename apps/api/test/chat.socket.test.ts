@@ -9,21 +9,47 @@ describe('chat socket flow', () => {
   let httpServer: ReturnType<typeof createServer>;
   let io: Server;
   let clientSocket: ClientSocket;
+  let chatService: {
+    getMessages: () => Promise<unknown[]>;
+    syncMessages: () => Promise<unknown[]>;
+    retry: (
+      userId: string,
+      payload: { sessionId: string; clientMessageId: string; message?: string },
+      callbacks?: {
+        onAIStart?: (meta: { provider: 'GEMINI' | 'OPENAI'; model: string }) => void;
+        onAIDone?: (result: { userMessage: unknown; assistantMessage: unknown }) => void;
+      },
+    ) => Promise<unknown>;
+    ask: (
+      userId: string,
+      payload: { sessionId: string; clientMessageId: string; message: string },
+      callbacks?: {
+        onUserMessage?: (message: unknown) => void;
+        onAIStart?: (meta: { provider: 'GEMINI' | 'OPENAI'; model: string }) => void;
+        onAIChunk?: (chunk: string, provider: 'GEMINI' | 'OPENAI', model: string) => void;
+        onAIDone?: (result: { userMessage: unknown; assistantMessage: unknown }) => void;
+      },
+    ) => Promise<unknown>;
+  };
 
   beforeEach(async () => {
     httpServer = createServer();
     io = new Server(httpServer);
 
-    const chatService = {
+    chatService = {
       getMessages: async () => [],
       syncMessages: async () => [],
       retry: async () => undefined,
-      ask: async (_userId: string, payload: { sessionId: string; clientMessageId: string; message: string }, callbacks?: {
-        onUserMessage?: (message: unknown) => void;
-        onAIStart?: (meta: { provider: 'GEMINI' | 'OPENAI'; model: string }) => void;
-        onAIChunk?: (chunk: string, provider: 'GEMINI' | 'OPENAI', model: string) => void;
-        onAIDone?: (result: { userMessage: unknown; assistantMessage: unknown }) => void;
-      }) => {
+      ask: async (
+        _userId: string,
+        payload: { sessionId: string; clientMessageId: string; message: string },
+        callbacks?: {
+          onUserMessage?: (message: unknown) => void;
+          onAIStart?: (meta: { provider: 'GEMINI' | 'OPENAI'; model: string }) => void;
+          onAIChunk?: (chunk: string, provider: 'GEMINI' | 'OPENAI', model: string) => void;
+          onAIDone?: (result: { userMessage: unknown; assistantMessage: unknown }) => void;
+        },
+      ) => {
         callbacks?.onUserMessage?.({
           id: payload.clientMessageId,
           sessionId: payload.sessionId,
@@ -134,5 +160,59 @@ describe('chat socket flow', () => {
     expect(ack.ok).toBe(true);
     await donePromise;
     expect(chunks.join('')).toBe('Hello there');
+  });
+
+  it('retries a failed prompt using the payload message when the server copy is missing', async () => {
+    const retryResult = new Promise<{ userMessage: { content: string }; assistantMessage: { content: string } }>(
+      (resolve) => {
+        chatService.retry = async (
+          _userId: string,
+          payload: { sessionId: string; clientMessageId: string; message?: string },
+          callbacks?: {
+            onAIStart?: (meta: { provider: 'GEMINI' | 'OPENAI'; model: string }) => void;
+            onAIDone?: (result: {
+              userMessage: { content: string };
+              assistantMessage: { content: string };
+            }) => void;
+          },
+        ) => {
+          callbacks?.onAIStart?.({ provider: 'OPENAI', model: 'gpt-5.4-mini' });
+          const response = {
+            userMessage: {
+              content: payload.message ?? '',
+            },
+            assistantMessage: {
+              content: 'Retry success',
+            },
+          };
+          callbacks?.onAIDone?.(response);
+          resolve(response);
+          return undefined;
+        };
+      },
+    );
+
+    const ack = await new Promise<{ ok: boolean }>((resolve) => {
+      clientSocket.emit(
+        'chat:retry_message',
+        {
+          sessionId: 'b6d6ce33-e15e-41ba-b592-b3c89f7aeb6f',
+          clientMessageId: 'client-message-5678',
+          message: 'Retry this offline prompt',
+          provider: 'OPENAI',
+        },
+        (response: { ok: boolean }) => resolve(response),
+      );
+    });
+
+    expect(ack.ok).toBe(true);
+    await expect(retryResult).resolves.toMatchObject({
+      userMessage: {
+        content: 'Retry this offline prompt',
+      },
+      assistantMessage: {
+        content: 'Retry success',
+      },
+    });
   });
 });

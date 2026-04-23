@@ -23,6 +23,7 @@ export const MaterialsPanel = ({
   materials,
   isLoading,
   errorMessage,
+  errorMeta,
   onRetry,
 }: {
   searchValue: string;
@@ -30,6 +31,7 @@ export const MaterialsPanel = ({
   materials: MaterialRecommendation[];
   isLoading: boolean;
   errorMessage?: string | null;
+  errorMeta?: string | null;
   onRetry?: () => void;
 }) => {
   return (
@@ -39,6 +41,7 @@ export const MaterialsPanel = ({
         <input
           aria-label="Tìm tài liệu"
           className="focus-ring w-full bg-transparent text-sm outline-none placeholder:text-ink/40 dark:text-slate-100 dark:placeholder:text-slate-500"
+          data-testid="materials-search"
           onChange={(event) => onSearchChange(event.target.value)}
           placeholder="Ví dụ: SQL joins, đạo hàm, hồi quy..."
           type="search"
@@ -64,6 +67,11 @@ export const MaterialsPanel = ({
               <div>
                 <p className="font-medium text-red-600 dark:text-red-300">Không tải được gợi ý tài liệu</p>
                 <p className="mt-2 leading-6 text-ink/70 dark:text-slate-300">{errorMessage}</p>
+                {errorMeta ? (
+                  <p className="mt-2 text-[11px] uppercase tracking-[0.14em] text-red-500/80 dark:text-red-300/80">
+                    {errorMeta}
+                  </p>
+                ) : null}
                 {onRetry ? (
                   <button
                     className="focus-ring mt-3 inline-flex items-center gap-2 rounded-full border border-black/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] dark:border-white/10"
@@ -93,6 +101,7 @@ export const MaterialsPanel = ({
           ? materials.map((material) => (
               <article
                 className="rounded-[26px] border border-black/5 bg-white/82 p-5 transition hover:border-black/10 hover:shadow-soft dark:border-white/10 dark:bg-slate-900/65"
+                data-testid={`material-${material.id}`}
                 key={material.id}
               >
                 <div className="flex items-start justify-between gap-3">

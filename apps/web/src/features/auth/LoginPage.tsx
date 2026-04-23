@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { Button } from '../../components/ui/Button';
 import { loginGuest } from '../../services/auth-service';
 import { useAuthStore } from '../../store/auth-store';
+import { getTransportErrorInfo } from '../../utils/transport-errors';
 
 const guestLoginSchema = z.object({
   displayName: z.string().trim().min(2).max(MAX_DISPLAY_NAME_CHARS),
@@ -40,7 +41,10 @@ export const LoginPage = () => {
       toast.success('Workspace đã sẵn sàng. Chúc bạn học tốt!');
       await navigate('/app');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Không thể vào workspace lúc này.');
+      const info = getTransportErrorInfo(error, 'Không thể vào workspace lúc này.');
+      toast.error(info.message, {
+        description: info.description,
+      });
     }
   });
 
@@ -123,6 +127,7 @@ export const LoginPage = () => {
                 <label className="mb-2 block text-sm font-semibold">Tên hiển thị / Display name</label>
                 <input
                   className="focus-ring w-full rounded-[22px] border border-black/8 bg-white/80 px-4 py-3 text-sm dark:border-white/10 dark:bg-slate-900/55"
+                  data-testid="guest-login-name"
                   placeholder="Nguyen Lan Anh"
                   {...form.register('displayName')}
                 />
@@ -135,6 +140,7 @@ export const LoginPage = () => {
                 <label className="mb-2 block text-sm font-semibold">Ngôn ngữ ưu tiên / Preferred language</label>
                 <select
                   className="focus-ring w-full rounded-[22px] border border-black/8 bg-white/80 px-4 py-3 text-sm dark:border-white/10 dark:bg-slate-900/55"
+                  data-testid="guest-login-language"
                   {...form.register('preferredLanguage')}
                 >
                   <option value="bilingual">Song ngữ VI-EN / Bilingual</option>
@@ -143,7 +149,12 @@ export const LoginPage = () => {
                 </select>
               </div>
 
-              <Button className="w-full justify-between px-5 py-3.5" disabled={form.formState.isSubmitting} type="submit">
+              <Button
+                className="w-full justify-between px-5 py-3.5"
+                data-testid="guest-login-submit"
+                disabled={form.formState.isSubmitting}
+                type="submit"
+              >
                 <span>{form.formState.isSubmitting ? 'Đang chuẩn bị workspace...' : 'Bắt đầu học / Enter workspace'}</span>
                 <ArrowRight className="h-4 w-4" />
               </Button>
