@@ -1,4 +1,5 @@
 export * from './constants/providers';
+export * from './constants/provider-capabilities';
 export * from './constants/ui';
 export * from './contracts/api';
 export * from './contracts/socket';

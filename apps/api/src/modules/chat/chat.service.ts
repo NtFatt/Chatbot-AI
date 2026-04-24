@@ -1,14 +1,25 @@
-import type { ChatAskResponse, ChatMessage, ChatSessionSummary, ProviderKey } from '@chatbot-ai/shared';
+import type {
+  ChatAskResponse,
+  ChatMessage,
+  ChatSessionSummary,
+  ProviderKey,
+  RetrievalSnapshot,
+} from '@chatbot-ai/shared';
+import type { Prisma } from '@prisma/client';
 
 import { buildContextSummary, buildSessionTitle } from '../../utils/text';
 import { AppError } from '../../utils/errors';
 import type { AuthService } from '../auth/auth.service';
 import { AIOrchestratorService } from '../../integrations/ai/ai-orchestrator.service';
+import { RetrievalService } from '../../integrations/retrieval/retrieval.service';
 import { ChatRepository } from './chat.repository';
+import { ChatGuardService } from './chat-guard.service';
 
 const DEFAULT_SESSION_TITLE = 'Tro chuyen moi / New study chat';
 
 const toIso = (value: Date) => value.toISOString();
+const toJsonValue = (value: RetrievalSnapshot | null | undefined): Prisma.InputJsonValue | undefined =>
+  value ? (JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue) : undefined;
 
 const mapSession = (
   session: Awaited<ReturnType<ChatRepository['listSessions']>>[number],
@@ -26,17 +37,26 @@ const mapSession = (
 const mapMessage = (
   message:
     | Awaited<ReturnType<ChatRepository['getMessages']>>[number]
-    | Awaited<ReturnType<ChatRepository['createMessage']>>,
+    | Awaited<ReturnType<ChatRepository['createMessage']>>
+    | Awaited<ReturnType<ChatRepository['updateMessage']>>,
 ): ChatMessage => ({
   id: message.id,
   sessionId: message.sessionId,
   clientMessageId: message.clientMessageId,
+  parentClientMessageId: message.parentClientMessageId ?? null,
   senderType: message.senderType,
   content: message.content,
   status: message.status,
   provider: message.provider ?? null,
   model: message.model ?? null,
+  providerRequestId: message.providerRequestId ?? null,
+  responseFinishReason: message.responseFinishReason ?? null,
   latencyMs: message.latencyMs ?? null,
+  inputTokens: message.inputTokens ?? null,
+  outputTokens: message.outputTokens ?? null,
+  totalTokens: message.totalTokens ?? null,
+  fallbackUsed: message.fallbackUsed,
+  retrievalSnapshot: (message.retrievalSnapshot as RetrievalSnapshot | null) ?? null,
   errorCode: message.errorCode ?? null,
   createdAt: toIso(message.createdAt),
   updatedAt: toIso(message.updatedAt),
@@ -47,6 +67,8 @@ export class ChatService {
     private readonly chatRepository: ChatRepository,
     private readonly authService: AuthService,
     private readonly aiOrchestrator: AIOrchestratorService,
+    private readonly retrievalService: RetrievalService,
+    private readonly chatGuardService: ChatGuardService,
   ) {}
 
   private assistantClientMessageId(clientMessageId: string) {
@@ -67,7 +89,10 @@ export class ChatService {
     return session;
   }
 
-  private async maybeRetitleSession(session: Awaited<ReturnType<ChatRepository['findSessionById']>>, message: string) {
+  private async maybeRetitleSession(
+    session: Awaited<ReturnType<ChatRepository['findSessionById']>>,
+    message: string,
+  ) {
     if (!session || session.title !== DEFAULT_SESSION_TITLE) {
       return session;
     }
@@ -163,9 +188,15 @@ export class ChatService {
       onMessageFailed?: (message: ChatMessage, error: { code: string; message: string }) => void;
       onSessionUpdated?: (session: ChatSessionSummary) => void;
     },
+    internal?: {
+      skipAskGuard?: boolean;
+    },
   ): Promise<ChatAskResponse> {
     const session = await this.ensureSession(payload.sessionId, userId);
     const user = await this.authService.me(userId);
+    const normalizedMessage = internal?.skipAskGuard
+      ? this.chatGuardService.normalizeMessage(payload.message)
+      : this.chatGuardService.assertCanAsk(userId, payload.message);
 
     const existingUserMessage = await this.chatRepository.findMessageByClientMessageId(payload.clientMessageId);
     const assistantClientMessageId = this.assistantClientMessageId(payload.clientMessageId);
@@ -177,21 +208,27 @@ export class ChatService {
       existingAssistantMessage?.sessionId === payload.sessionId &&
       existingAssistantMessage.status === 'sent'
     ) {
-      const response: ChatAskResponse = {
+      return {
         userMessage: mapMessage(existingUserMessage),
         assistantMessage: mapMessage(existingAssistantMessage),
         ai: {
           provider: existingAssistantMessage.provider ?? session.providerPreference,
           model: existingAssistantMessage.model ?? 'unknown',
+          providerRequestId: existingAssistantMessage.providerRequestId ?? undefined,
           contentMarkdown: existingAssistantMessage.content,
-          finishReason: 'stop',
+          finishReason: existingAssistantMessage.responseFinishReason ?? 'stop',
+          usage: {
+            inputTokens: existingAssistantMessage.inputTokens ?? undefined,
+            outputTokens: existingAssistantMessage.outputTokens ?? undefined,
+            totalTokens: existingAssistantMessage.totalTokens ?? undefined,
+          },
           latencyMs: existingAssistantMessage.latencyMs ?? 0,
-          fallbackUsed: false,
+          fallbackUsed: existingAssistantMessage.fallbackUsed,
           warnings: ['Existing response reused.'],
+          retrievalSnapshot:
+            (existingAssistantMessage.retrievalSnapshot as RetrievalSnapshot | null) ?? null,
         },
       };
-
-      return response;
     }
 
     const userMessage =
@@ -201,11 +238,17 @@ export class ChatService {
             sessionId: payload.sessionId,
             clientMessageId: payload.clientMessageId,
             senderType: 'user',
-            content: payload.message,
+            content: normalizedMessage,
             status: 'sent',
           });
 
     callbacks?.onUserMessage?.(mapMessage(userMessage));
+
+    const retrievalContext = await this.retrievalService.retrieveForQuestion({
+      userId,
+      sessionId: payload.sessionId,
+      message: normalizedMessage,
+    });
 
     const assistantPlaceholder =
       existingAssistantMessage && existingAssistantMessage.sessionId === payload.sessionId
@@ -216,14 +259,23 @@ export class ChatService {
             errorCode: null,
             provider: null,
             model: null,
+            providerRequestId: null,
+            responseFinishReason: null,
             latencyMs: null,
+            inputTokens: null,
+            outputTokens: null,
+            totalTokens: null,
+            fallbackUsed: false,
+            retrievalSnapshot: toJsonValue(retrievalContext),
           })
         : await this.chatRepository.createMessage({
             sessionId: payload.sessionId,
             clientMessageId: assistantClientMessageId,
+            parentClientMessageId: payload.clientMessageId,
             senderType: 'assistant',
             content: '',
             status: 'streaming',
+            retrievalSnapshot: toJsonValue(retrievalContext),
           });
 
     const updatedSession = await this.maybeRetitleSession(session, userMessage.content);
@@ -242,68 +294,101 @@ export class ChatService {
 
     const contextMessages = await this.chatRepository.getContextMessages(payload.sessionId, 20);
     let started = false;
+    const releaseStream = this.chatGuardService.beginStream(userId);
 
-    const aiResult = await this.aiOrchestrator.generate({
-      requestedProvider: payload.provider,
-      sessionProvider: session.providerPreference,
-      language: user.preferredLanguage,
-      contextSummary: session.contextSummary,
-      messages: contextMessages.map(mapMessage),
-      onChunk: (chunk, provider, model) => {
-        if (!started) {
-          started = true;
-          callbacks?.onAIStart?.({ provider, model });
-        }
+    try {
+      const aiResult = await this.aiOrchestrator.generate({
+        userId,
+        sessionId: payload.sessionId,
+        requestedProvider: payload.provider,
+        sessionProvider: session.providerPreference,
+        language: user.preferredLanguage,
+        contextSummary: session.contextSummary,
+        messages: contextMessages.map(mapMessage),
+        retrievalPromptContext: retrievalContext.promptContext,
+        retrievalSnapshot: retrievalContext,
+        subjectHint: retrievalContext.inferredSubject ?? undefined,
+        onChunk: (chunk, provider, model) => {
+          if (!started) {
+            started = true;
+            callbacks?.onAIStart?.({ provider, model });
+          }
 
-        callbacks?.onAIChunk?.(chunk, provider, model);
-      },
-    });
-
-    const finalAssistant = await this.chatRepository.updateMessage({
-      clientMessageId: assistantClientMessageId,
-      content: aiResult.contentMarkdown,
-      status: aiResult.finishReason === 'error' ? 'failed' : 'sent',
-      provider: aiResult.provider,
-      model: aiResult.model,
-      latencyMs: aiResult.latencyMs,
-      errorCode: aiResult.finishReason === 'error' ? 'AI_PROVIDER_FAILURE' : null,
-    });
-
-    const recentMessageTexts = [...contextMessages, finalAssistant].map((message) => message.content);
-    const summarizedSession = await this.chatRepository.updateSession({
-      sessionId: payload.sessionId,
-      userId,
-      contextSummary: buildContextSummary(recentMessageTexts),
-    });
-
-    const sessionSummary: ChatSessionSummary = {
-      id: summarizedSession.id,
-      title: summarizedSession.title,
-      providerPreference: summarizedSession.providerPreference,
-      contextSummary: summarizedSession.contextSummary,
-      createdAt: toIso(summarizedSession.createdAt),
-      updatedAt: toIso(summarizedSession.updatedAt),
-      lastMessagePreview: aiResult.contentMarkdown,
-      messageCount: 0,
-    };
-    callbacks?.onSessionUpdated?.(sessionSummary);
-
-    const response: ChatAskResponse = {
-      userMessage: mapMessage(userMessage),
-      assistantMessage: mapMessage(finalAssistant),
-      ai: aiResult,
-    };
-
-    if (aiResult.finishReason === 'error') {
-      callbacks?.onMessageFailed?.(response.assistantMessage, {
-        code: 'AI_PROVIDER_FAILURE',
-        message: 'AI response failed. You can retry the same question.',
+          callbacks?.onAIChunk?.(chunk, provider, model);
+        },
       });
-    } else {
-      callbacks?.onAIDone?.(response);
-    }
 
-    return response;
+      const finalAssistant = await this.chatRepository.updateMessage({
+        clientMessageId: assistantClientMessageId,
+        content: aiResult.contentMarkdown,
+        status: aiResult.finishReason === 'error' ? 'failed' : 'sent',
+        provider: aiResult.provider,
+        model: aiResult.model,
+        providerRequestId: aiResult.providerRequestId ?? null,
+        responseFinishReason: aiResult.finishReason,
+        latencyMs: aiResult.latencyMs,
+        inputTokens: aiResult.usage?.inputTokens ?? null,
+        outputTokens: aiResult.usage?.outputTokens ?? null,
+        totalTokens: aiResult.usage?.totalTokens ?? null,
+        fallbackUsed: aiResult.fallbackUsed,
+        retrievalSnapshot: toJsonValue(aiResult.retrievalSnapshot ?? retrievalContext),
+        errorCode: aiResult.finishReason === 'error' ? 'AI_PROVIDER_FAILURE' : null,
+      });
+
+      const recentMessageTexts = [...contextMessages, finalAssistant].map((message) => message.content);
+      const summarizedSession = await this.chatRepository.updateSession({
+        sessionId: payload.sessionId,
+        userId,
+        contextSummary: buildContextSummary(recentMessageTexts),
+      });
+
+      const sessionSummary: ChatSessionSummary = {
+        id: summarizedSession.id,
+        title: summarizedSession.title,
+        providerPreference: summarizedSession.providerPreference,
+        contextSummary: summarizedSession.contextSummary,
+        createdAt: toIso(summarizedSession.createdAt),
+        updatedAt: toIso(summarizedSession.updatedAt),
+        lastMessagePreview: aiResult.contentMarkdown,
+        messageCount: 0,
+      };
+      callbacks?.onSessionUpdated?.(sessionSummary);
+
+      const response: ChatAskResponse = {
+        userMessage: mapMessage(userMessage),
+        assistantMessage: mapMessage(finalAssistant),
+        ai: aiResult,
+      };
+
+      if (aiResult.finishReason === 'error') {
+        callbacks?.onMessageFailed?.(response.assistantMessage, {
+          code: 'AI_PROVIDER_FAILURE',
+          message: 'AI response failed. You can retry the same question.',
+        });
+      } else {
+        callbacks?.onAIDone?.(response);
+      }
+
+      return response;
+    } catch (error) {
+      const appError =
+        error instanceof AppError
+          ? error
+          : new AppError(500, 'CHAT_PIPELINE_FAILED', 'Không thể hoàn tất câu trả lời ở thời điểm này.');
+
+      const failedAssistant = await this.chatRepository.updateMessage({
+        clientMessageId: assistantPlaceholder.clientMessageId,
+        status: 'failed',
+        errorCode: appError.code,
+      });
+      callbacks?.onMessageFailed?.(mapMessage(failedAssistant), {
+        code: appError.code,
+        message: appError.message,
+      });
+      throw appError;
+    } finally {
+      releaseStream();
+    }
   }
 
   async retry(
@@ -327,15 +412,20 @@ export class ChatService {
       throw new AppError(404, 'MESSAGE_NOT_FOUND', 'Original user message not found.');
     }
 
+    const normalizedRetryContent = this.chatGuardService.assertCanRetry(userId, retryContent);
+
     return this.ask(
       userId,
       {
         sessionId: payload.sessionId,
         clientMessageId: normalizedClientMessageId,
-        message: retryContent,
+        message: normalizedRetryContent,
         provider: payload.provider,
       },
       callbacks,
+      {
+        skipAskGuard: true,
+      },
     );
   }
 

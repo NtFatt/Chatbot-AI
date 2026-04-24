@@ -3,6 +3,7 @@ import type { AppLanguage } from '../constants/ui';
 export interface StudyPromptOptions {
   language: AppLanguage;
   subjectHint?: string | null;
+  retrievalContext?: string | null;
 }
 
 const languageInstructions: Record<AppLanguage, string> = {
@@ -17,6 +18,19 @@ export const buildStudySystemPrompt = (options: StudyPromptOptions): string => {
     ? `Neu phu hop, uu tien bo sung ngu canh mon hoc: ${options.subjectHint}.`
     : 'Neu chua ro mon hoc, hay dua ra gia dinh hop ly nhat va noi ro gia dinh do.';
 
+  const retrievalLine = options.retrievalContext
+    ? [
+        'Ban da duoc cung cap mot tap tai lieu hoc lien quan cho luot hoi hien tai.',
+        'Neu retrieval context co tai lieu, uu tien dua vao cac tai lieu nay de giai thich va goi y hoc tiep.',
+        'Khong duoc bịa them tai lieu ngoai danh sach retrieval context.',
+        'Cuoi cau tra loi, neu co retrieval context, them hai muc nho:',
+        '- Tai lieu nen doc tiep',
+        '- Tu khoa nen hoc tiep',
+        'RETRIEVAL CONTEXT:',
+        options.retrievalContext,
+      ].join('\n')
+    : 'Neu khong co tai lieu truy xuat duoc, hay noi ro rang day la cau tra loi dua tren kien thuc chung va muc do chac chan cua ban.';
+
   return [
     'Ban la tro ly hoc tap AI danh cho sinh vien dai hoc.',
     languageInstructions[options.language],
@@ -27,6 +41,7 @@ export const buildStudySystemPrompt = (options: StudyPromptOptions): string => {
     '3. Vi du minh hoa',
     '4. Goi y hoc tiep',
     subjectLine,
+    retrievalLine,
     'Neu thong tin co the khong chac chan, hay noi ro muc do chac chan.',
     'Khong duoc bocua thong tin khong co co so, khong duoc gia mao nguon tham khao.',
     'Su dung markdown gon gang, uu tien bullet va code block khi can.',

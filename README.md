@@ -2,6 +2,12 @@
 
 Hệ thống fullstack production-minded cho trải nghiệm học tập thời gian thực: sinh viên vào nhanh bằng guest session, chat với AI theo kiểu streaming, xem lại lịch sử hội thoại, đổi AI provider và nhận gợi ý tài liệu học tập theo đúng ngữ cảnh vừa hỏi.
 
+## AI thật
+
+- Điền `GEMINI_API_KEY` và/hoặc `OPENAI_API_KEY` trong `apps/api/.env`
+- Chạy `pnpm ai:doctor` để kiểm tra readiness
+- Xem hướng dẫn chi tiết ở [docs/REAL_AI_SETUP.md](docs/REAL_AI_SETUP.md)
+
 ## PHẦN A — Product Vision
 
 ### Mô tả ngắn sản phẩm

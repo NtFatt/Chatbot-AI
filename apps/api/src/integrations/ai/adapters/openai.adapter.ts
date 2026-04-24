@@ -66,6 +66,7 @@ export class OpenAIAdapter implements AIProvider {
 
       return {
         text: resolvedText,
+        providerRequestId: finalResponse?.id,
         finishReason:
           finalResponse?.status === 'completed'
             ? 'stop'
@@ -83,6 +84,12 @@ export class OpenAIAdapter implements AIProvider {
             }
           : undefined,
       };
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('OPENAI_TIMEOUT');
+      }
+
+      throw error;
     } finally {
       clearTimeout(timeout);
     }

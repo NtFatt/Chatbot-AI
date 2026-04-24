@@ -1,18 +1,30 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowUp } from 'lucide-react';
+import { ArrowUp, ImagePlus, Mic, Paperclip, Plus } from 'lucide-react';
 
-import { MAX_MESSAGE_CHARS } from '@chatbot-ai/shared';
+import { MAX_MESSAGE_CHARS, type ProviderKey } from '@chatbot-ai/shared';
 
-import { Button } from '../ui/Button';
+import { cn } from '../../utils/cn';
+import { IconButton } from '../ui/IconButton';
+
+interface ChatComposerProps {
+  activeProvider: ProviderKey;
+  connectionState: 'connected' | 'reconnecting' | 'disconnected';
+  disabled: boolean;
+  onChange: (value: string) => void;
+  onOpenContext?: () => void;
+  onSend: (message: string) => Promise<void> | void;
+  value: string;
+}
 
 export const ChatComposer = ({
+  connectionState,
   disabled,
+  onChange,
+  onOpenContext,
   onSend,
-}: {
-  disabled: boolean;
-  onSend: (message: string) => Promise<void> | void;
-}) => {
-  const [value, setValue] = useState('');
+  value,
+}: ChatComposerProps) => {
+  const [isAttachOpen, setIsAttachOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const remaining = MAX_MESSAGE_CHARS - value.length;
@@ -24,9 +36,20 @@ export const ChatComposer = ({
     }
 
     textarea.style.height = '0px';
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 260)}px`;
-    textarea.style.overflowY = textarea.scrollHeight > 260 ? 'auto' : 'hidden';
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`;
+    textarea.style.overflowY = textarea.scrollHeight > 160 ? 'auto' : 'hidden';
   }, [value]);
+
+  useEffect(() => {
+    const handleClickOutside = () => {
+      if (isAttachOpen) {
+        setIsAttachOpen(false);
+      }
+    };
+
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [isAttachOpen]);
 
   const submit = async () => {
     const trimmed = value.trim();
@@ -37,7 +60,7 @@ export const ChatComposer = ({
     setSubmitting(true);
     try {
       await onSend(trimmed);
-      setValue('');
+      onChange('');
       if (textareaRef.current) {
         textareaRef.current.style.height = '0px';
       }
@@ -46,48 +69,135 @@ export const ChatComposer = ({
     }
   };
 
+  const disabledHint =
+    connectionState === 'disconnected'
+      ? 'Realtime disconnected. Using fallback.'
+      : disabled
+        ? ''
+        : '';
+
   return (
-    <div className="rounded-[24px] border border-black/8 bg-white/96 px-2.5 py-2.5 shadow-[0_18px_48px_rgba(15,23,32,0.08)] dark:border-white/10 dark:bg-[#2c2d30] dark:shadow-[0_18px_48px_rgba(0,0,0,0.35)]">
-      <div className="rounded-[20px] border border-black/6 bg-white/95 px-3.5 pt-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] dark:border-white/10 dark:bg-[#343538]">
+    <div className="relative flex items-end gap-2 px-4 pb-4">
+      <div
+        className={cn(
+          'group relative flex-1 rounded-xl border transition-colors',
+          value.trim()
+            ? 'border-ocean/30 bg-white/90 shadow-sm dark:border-cyan/30 dark:bg-slate-900/80'
+            : 'border-black/[0.06] bg-white/80 focus-within:border-ocean/30 dark:border-white/10 dark:bg-slate-900/70 dark:focus-within:border-cyan/30',
+          disabled && 'opacity-50',
+        )}
+      >
         <textarea
           ref={textareaRef}
-          aria-label="Khung nhập câu hỏi"
-          className="composer-scrollbar focus-ring min-h-[72px] max-h-[180px] w-full resize-none overflow-y-auto bg-transparent pr-2 text-[15px] leading-7 text-ink placeholder:text-ink/42 disabled:cursor-not-allowed dark:text-slate-100 dark:placeholder:text-slate-500"
-          data-testid="chat-composer-input"
+          aria-label="Type your question"
+          className={cn(
+            'composer-scrollbar w-full resize-none bg-transparent px-4 py-3 text-sm leading-relaxed text-ink outline-none placeholder:text-ink/35 dark:text-slate-100 dark:placeholder:text-slate-500',
+            'disabled:cursor-not-allowed',
+          )}
           disabled={disabled || submitting}
           maxLength={MAX_MESSAGE_CHARS}
-          onChange={(event) => setValue(event.target.value)}
+          onChange={(event) => onChange(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault();
               void submit();
             }
           }}
-          placeholder="Hỏi khái niệm, xin ví dụ, yêu cầu tóm tắt bài học hoặc nhờ gợi ý tài liệu..."
+          placeholder="Ask anything about your studies..."
+          rows={1}
           value={value}
         />
 
-        <div className="mt-3 flex flex-col gap-2 border-t border-black/6 pb-0.5 pt-2.5 dark:border-white/10 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs leading-5 text-ink/60 dark:text-slate-400">
-            {disabled ? 'Đang chờ phản hồi từ AI.' : 'Enter để gửi, Shift + Enter để xuống dòng.'}
-          </p>
+        {remaining < 500 && (
+          <div className="pointer-events-none absolute bottom-2 right-20 text-[10px] text-ink/35 dark:text-slate-600">
+            {remaining}
+          </div>
+        )}
+      </div>
 
-          <div className="flex items-center justify-between gap-3 sm:justify-end">
-            <span className="text-xs font-medium text-ink/52 dark:text-slate-400">{remaining} ký tự còn lại</span>
-            <Button
-              aria-label="Gửi câu hỏi"
-              className="h-10 min-w-[42px] rounded-full bg-gradient-to-r from-ocean to-cyan px-4 text-white shadow-[0_16px_30px_rgba(12,109,122,0.16)] dark:text-white"
-              data-testid="chat-send-button"
-              disabled={disabled || submitting || !value.trim()}
-              onClick={() => void submit()}
-              type="button"
-            >
-              <ArrowUp className="h-4 w-4" />
-              <span className="hidden sm:inline">{submitting ? 'Đang gửi...' : 'Gửi'}</span>
-            </Button>
+      <div className="flex items-center gap-1.5 pb-0.5">
+        <div className="relative">
+          <IconButton
+            className={cn(isAttachOpen && 'bg-ocean/10')}
+            icon={<Plus className="h-4 w-4" />}
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsAttachOpen(!isAttachOpen);
+            }}
+            size="sm"
+            tooltip="Attach"
+            variant="ghost"
+          />
+
+          <div
+            className={cn(
+              'absolute bottom-full left-0 mb-2 flex gap-1 rounded-xl border border-black/[0.06] bg-white/95 p-1.5 shadow-lg backdrop-blur-xl transition-all dark:border-white/10 dark:bg-slate-900/95',
+              isAttachOpen ? 'opacity-100 translate-y-0' : 'opacity-0 pointer-events-none translate-y-2',
+            )}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <IconButton
+              className="h-8 w-8"
+              icon={<Paperclip className="h-3.5 w-3.5" />}
+              size="sm"
+              tooltip="Attach file"
+              variant="ghost"
+            />
+            <IconButton
+              className="h-8 w-8"
+              icon={<ImagePlus className="h-3.5 w-3.5" />}
+              size="sm"
+              tooltip="Add image"
+              variant="ghost"
+            />
+            <IconButton
+              className="h-8 w-8"
+              icon={<Mic className="h-3.5 w-3.5" />}
+              size="sm"
+              tooltip="Voice input"
+              variant="ghost"
+            />
           </div>
         </div>
+
+        {onOpenContext && (
+          <IconButton
+            icon={
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                />
+              </svg>
+            }
+            onClick={onOpenContext}
+            size="sm"
+            tooltip="Learning context"
+            variant="ghost"
+          />
+        )}
+
+        <IconButton
+          className={cn(
+            'transition-all',
+            value.trim() && !disabled && !submitting
+              ? 'bg-ocean text-white hover:bg-ocean/90 dark:bg-cyan dark:text-ink dark:hover:bg-cyan/90'
+              : 'bg-black/[0.06] text-ink/40 dark:bg-white/10 dark:text-slate-500',
+          )}
+          icon={<ArrowUp className="h-4 w-4" />}
+          onClick={() => void submit()}
+          size="sm"
+          tooltip={submitting ? 'Sending...' : 'Send (Enter)'}
+        />
       </div>
+
+      {disabledHint && !disabled && (
+        <p className="absolute -top-5 left-4 text-[11px] text-ink/50 dark:text-slate-500">
+          {disabledHint}
+        </p>
+      )}
     </div>
   );
 };

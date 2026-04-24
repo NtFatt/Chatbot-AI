@@ -1,21 +1,25 @@
-import { AlertCircle, BookOpenText, Link2, RefreshCcw, Search } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, BookOpenText, RefreshCcw, Search } from 'lucide-react';
 
 import type { MaterialRecommendation } from '@chatbot-ai/shared';
 
+import { cn } from '../../utils/cn';
+
 const levelLabels = {
-  beginner: 'Cơ bản',
-  intermediate: 'Trung bình',
-  advanced: 'Nâng cao',
+  beginner: 'Basic',
+  intermediate: 'Intermediate',
+  advanced: 'Advanced',
 } as const;
 
 const typeLabels = {
   pdf: 'PDF',
   video: 'Video',
   slide: 'Slide',
-  article: 'Bài viết',
-  textbook: 'Giáo trình',
-  exercise: 'Bài tập',
+  article: 'Article',
+  textbook: 'Book',
+  exercise: 'Exercise',
 } as const;
+
+type Variant = 'default' | 'rail' | 'drawer';
 
 export const MaterialsPanel = ({
   searchValue,
@@ -25,6 +29,7 @@ export const MaterialsPanel = ({
   errorMessage,
   errorMeta,
   onRetry,
+  variant = 'default',
 }: {
   searchValue: string;
   onSearchChange: (value: string) => void;
@@ -33,134 +38,115 @@ export const MaterialsPanel = ({
   errorMessage?: string | null;
   errorMeta?: string | null;
   onRetry?: () => void;
+  variant?: Variant;
 }) => {
+  const isCompact = variant === 'rail' || variant === 'drawer';
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <label className="shrink-0 flex items-center gap-3 rounded-full border border-black/8 bg-white/75 px-4 py-3 dark:border-white/10 dark:bg-slate-900/55">
-        <Search className="h-4 w-4 text-ink/45 dark:text-slate-400" />
+      <div
+        className={cn(
+          'shrink-0 flex items-center gap-2 rounded-xl border',
+          isCompact
+            ? 'border-black/[0.05] bg-white/60 px-3 py-2.5 dark:border-white/10 dark:bg-slate-900/40'
+            : 'border-black/[0.08] bg-white/80 px-4 py-3 dark:border-white/10 dark:bg-slate-900/60',
+        )}
+      >
+        <Search className="h-4 w-4 shrink-0 text-ink/35 dark:text-slate-500" />
         <input
-          aria-label="Tìm tài liệu"
-          className="focus-ring w-full bg-transparent text-sm outline-none placeholder:text-ink/40 dark:text-slate-100 dark:placeholder:text-slate-500"
+          aria-label="Search materials"
+          className="w-full bg-transparent text-sm outline-none placeholder:text-ink/35 dark:text-slate-100 dark:placeholder:text-slate-500"
           data-testid="materials-search"
           onChange={(event) => onSearchChange(event.target.value)}
-          placeholder="Ví dụ: SQL joins, đạo hàm, hồi quy..."
+          placeholder="Search materials..."
           type="search"
           value={searchValue}
         />
-      </label>
+      </div>
 
-      <div className="app-scrollbar mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-2">
-        {isLoading
-          ? Array.from({ length: 3 }).map((_, index) => (
-              <div className="animate-pulse rounded-[24px] bg-black/5 p-4 dark:bg-white/5" key={index}>
-                <div className="h-4 w-3/4 rounded bg-black/10 dark:bg-white/10" />
-                <div className="mt-3 h-3 w-full rounded bg-black/10 dark:bg-white/10" />
-                <div className="mt-2 h-3 w-2/3 rounded bg-black/10 dark:bg-white/10" />
-              </div>
-            ))
-          : null}
-
-        {!isLoading && errorMessage ? (
-          <div className="rounded-[24px] border border-red-500/20 bg-red-500/5 px-4 py-5 text-sm dark:border-red-500/25">
-            <div className="flex items-start gap-3">
-              <AlertCircle className="mt-0.5 h-5 w-5 text-red-500" />
-              <div>
-                <p className="font-medium text-red-600 dark:text-red-300">Không tải được gợi ý tài liệu</p>
-                <p className="mt-2 leading-6 text-ink/70 dark:text-slate-300">{errorMessage}</p>
-                {errorMeta ? (
-                  <p className="mt-2 text-[11px] uppercase tracking-[0.14em] text-red-500/80 dark:text-red-300/80">
-                    {errorMeta}
-                  </p>
-                ) : null}
-                {onRetry ? (
-                  <button
-                    className="focus-ring mt-3 inline-flex items-center gap-2 rounded-full border border-black/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] dark:border-white/10"
-                    onClick={onRetry}
-                    type="button"
-                  >
-                    <RefreshCcw className="h-3.5 w-3.5" />
-                    Tải lại
-                  </button>
-                ) : null}
-              </div>
+      {isLoading ? (
+        <div className="mt-3 space-y-2">
+          {Array.from({ length: isCompact ? 2 : 3 }).map((_, index) => (
+            <div
+              className="rounded-xl border border-black/[0.05] bg-white/50 p-3 animate-pulse dark:border-white/10 dark:bg-slate-900/30"
+              key={index}
+            >
+              <div className="h-4 w-3/4 rounded-full bg-black/[0.06] dark:bg-white/[0.06]" />
+              <div className="mt-2 h-3 w-full rounded-full bg-black/[0.04] dark:bg-white/[0.04]" />
+              <div className="mt-1.5 h-3 w-2/3 rounded-full bg-black/[0.04] dark:bg-white/[0.04]" />
+            </div>
+          ))}
+        </div>
+      ) : errorMessage ? (
+        <div className="mt-3 rounded-xl border border-red-500/15 bg-red-500/5 p-4">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0 text-red-500" />
+            <div>
+              <p className="text-sm font-medium text-red-600 dark:text-red-400">{errorMessage}</p>
+              {errorMeta && (
+                <p className="mt-1 text-xs text-red-500/70 dark:text-red-400/70">{errorMeta}</p>
+              )}
+              {onRetry && (
+                <button
+                  className="focus-ring mt-2 inline-flex items-center gap-1 rounded-lg border border-red-500/20 bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-600 transition hover:bg-red-500/15 dark:text-red-400"
+                  onClick={onRetry}
+                  type="button"
+                >
+                  <RefreshCcw className="h-3 w-3" />
+                  Retry
+                </button>
+              )}
             </div>
           </div>
-        ) : null}
-
-        {!isLoading && !errorMessage && materials.length === 0 ? (
-          <div className="rounded-[24px] border border-dashed border-black/10 px-4 py-8 text-center dark:border-white/10">
-            <BookOpenText className="mx-auto h-10 w-10 text-ink/40 dark:text-slate-500" />
-            <p className="mt-4 font-medium">Chưa tìm thấy tài liệu phù hợp</p>
-            <p className="mt-2 text-sm leading-6 text-ink/60 dark:text-slate-400">
-              Thử từ khóa rộng hơn hoặc gửi thêm câu hỏi trong khung chat để hệ thống hiểu rõ ngữ cảnh.
-            </p>
-          </div>
-        ) : null}
-
-        {!isLoading && !errorMessage
-          ? materials.map((material) => (
-              <article
-                className="rounded-[26px] border border-black/5 bg-white/82 p-5 transition hover:border-black/10 hover:shadow-soft dark:border-white/10 dark:bg-slate-900/65"
-                data-testid={`material-${material.id}`}
-                key={material.id}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-lg font-semibold leading-8">{material.title}</p>
-                    <p className="mt-2 text-sm leading-7 text-ink/65 dark:text-slate-300">
-                      {material.description}
-                    </p>
+        </div>
+      ) : materials.length === 0 ? (
+        <div className="mt-6 flex flex-col items-center justify-center text-center">
+          <BookOpenText className="h-8 w-8 text-ink/25 dark:text-slate-600" />
+          <p className="mt-3 text-sm font-medium text-ink/60 dark:text-slate-500">No materials found</p>
+          <p className="mt-1 text-xs text-ink/40 dark:text-slate-600">
+            Try different search terms
+          </p>
+        </div>
+      ) : (
+        <div className="app-scrollbar mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto">
+          {materials.map((material) => (
+            <a
+              className={cn(
+                'focus-ring group block rounded-xl border border-black/[0.05] bg-white/50 p-3 transition hover:border-black/[0.08] hover:bg-white/70 dark:border-white/10 dark:bg-slate-900/30 dark:hover:bg-slate-900/50',
+                isCompact && 'p-2.5',
+              )}
+              data-testid={`material-${material.id}`}
+              href={material.url}
+              key={material.id}
+              rel="noreferrer"
+              target="_blank"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className={cn(
+                    'font-semibold leading-tight text-ink dark:text-slate-100',
+                    isCompact ? 'text-sm' : 'text-[15px]'
+                  )}>
+                    {material.title}
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    <span className="rounded-full bg-cyan/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-ocean dark:text-cyan">
+                      {typeLabels[material.type]}
+                    </span>
+                    <span className="text-[10px] text-ink/45 dark:text-slate-600">
+                      {material.subject.nameVi}
+                    </span>
+                    <span className="text-[10px] text-ink/35 dark:text-slate-700">
+                      {Math.round(material.score)}% match
+                    </span>
                   </div>
-                  <span className="rounded-full bg-cyan/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.15em] text-ocean dark:text-cyan">
-                    {typeLabels[material.type]}
-                  </span>
                 </div>
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <span className="rounded-full border border-black/8 px-2.5 py-1 text-[11px] font-medium text-ink/68 dark:border-white/10 dark:text-slate-300">
-                    {material.subject.nameVi}
-                  </span>
-                  {material.topic ? (
-                    <span className="rounded-full border border-black/8 px-2.5 py-1 text-[11px] font-medium text-ink/68 dark:border-white/10 dark:text-slate-300">
-                      {material.topic.nameVi}
-                    </span>
-                  ) : null}
-                  <span className="rounded-full border border-black/8 px-2.5 py-1 text-[11px] font-medium text-ink/68 dark:border-white/10 dark:text-slate-300">
-                    {levelLabels[material.level]}
-                  </span>
-                  <span className="rounded-full border border-black/8 px-2.5 py-1 text-[11px] font-medium text-ink/68 dark:border-white/10 dark:text-slate-300">
-                    Điểm phù hợp {Math.round(material.score)}
-                  </span>
-                </div>
-
-                <p className="mt-4 text-[11px] uppercase tracking-[0.16em] text-ink/48 dark:text-slate-500">
-                  Nguồn: {material.source}
-                </p>
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {material.reason.map((item) => (
-                    <span
-                      className="rounded-full border border-black/10 px-2.5 py-1 text-[11px] text-ink/70 dark:border-white/10 dark:text-slate-300"
-                      key={item}
-                    >
-                      {item}
-                    </span>
-                  ))}
-                </div>
-
-                <a
-                  className="focus-ring mt-4 inline-flex items-center gap-2 text-sm font-semibold text-ocean dark:text-cyan"
-                  href={material.url}
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  <Link2 className="h-4 w-4" />
-                  Mở tài liệu
-                </a>
-              </article>
-            ))
-          : null}
-      </div>
+                <ArrowUpRight className="h-4 w-4 shrink-0 text-ink/30 transition group-hover:text-ocean dark:text-slate-600 dark:group-hover:text-cyan" />
+              </div>
+            </a>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

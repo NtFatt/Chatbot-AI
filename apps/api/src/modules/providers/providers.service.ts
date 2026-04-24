@@ -1,9 +1,21 @@
-import type { ProviderKey } from '@chatbot-ai/shared';
-import { DEFAULT_PROVIDER, FALLBACK_PROVIDER, PROVIDER_DEFAULT_MODELS } from '@chatbot-ai/shared';
+import type {
+  ProviderHealthState,
+  ProviderKey,
+  ProviderRuntimeStatus,
+} from '@chatbot-ai/shared';
+import {
+  DEFAULT_PROVIDER,
+  FALLBACK_PROVIDER,
+  PROVIDER_DEFAULT_MODELS,
+  PROVIDER_KEYS,
+} from '@chatbot-ai/shared';
 
 import { prisma } from '../../config/prisma';
 import { env } from '../../config/env';
 import type { AIProvider } from '../../integrations/ai/ai.types';
+import { ProviderHealthService } from '../../integrations/ai/provider-health.service';
+
+type RuntimeSource = 'db' | 'env' | 'default';
 
 export interface ProviderDescriptor {
   key: ProviderKey;
@@ -13,81 +25,117 @@ export interface ProviderDescriptor {
   model: string;
   timeoutMs: number;
   maxRetries: number;
+  healthState: ProviderHealthState;
+  cooldownRemainingMs: number;
+  runtimeSource: RuntimeSource;
 }
 
 export interface ProviderConnectivityDescriptor extends ProviderDescriptor {
-  status: 'ready' | 'missing_key' | 'disabled' | 'error';
+  status: ProviderRuntimeStatus;
   message: string;
   checkedAt: string;
   latencyMs: number | null;
 }
 
+const providerKeyToEnv = (provider: ProviderKey) =>
+  provider === 'GEMINI'
+    ? {
+        apiKey: env.GEMINI_API_KEY,
+        enabled: env.GEMINI_ENABLED,
+        model: env.GEMINI_MODEL,
+        timeoutMs: env.GEMINI_TIMEOUT_MS,
+      }
+    : {
+        apiKey: env.OPENAI_API_KEY,
+        enabled: env.OPENAI_ENABLED,
+        model: env.OPENAI_MODEL,
+        timeoutMs: env.OPENAI_TIMEOUT_MS,
+      };
+
 export class ProvidersService {
-  async listProviders() {
+  constructor(private readonly providerHealthService: ProviderHealthService) {}
+
+  private async readDescriptors() {
     const dbConfigs = await prisma.aiProviderConfig.findMany();
-    const byKey = new Map(dbConfigs.map((item) => [item.provider, item]));
+    const byKey = new Map(dbConfigs.map((item) => [item.provider as ProviderKey, item]));
 
-    const geminiConfigured = Boolean(env.GEMINI_API_KEY) && env.GEMINI_ENABLED;
-    const openaiConfigured = Boolean(env.OPENAI_API_KEY) && env.OPENAI_ENABLED;
+    const providers = PROVIDER_KEYS.map((key) => {
+      const envConfig = providerKeyToEnv(key);
+      const dbConfig = byKey.get(key);
+      const health = this.providerHealthService.snapshot(key);
 
-    const providers = [
-      {
-        key: 'GEMINI' as const,
-        enabled: byKey.get('GEMINI')?.enabled ?? true,
-        configured: geminiConfigured,
-        isPrimary: byKey.get('GEMINI')?.isPrimary ?? DEFAULT_PROVIDER === 'GEMINI',
-        model: byKey.get('GEMINI')?.model ?? env.GEMINI_MODEL ?? PROVIDER_DEFAULT_MODELS.GEMINI,
-        timeoutMs: byKey.get('GEMINI')?.timeoutMs ?? env.GEMINI_TIMEOUT_MS,
-        maxRetries: byKey.get('GEMINI')?.maxRetries ?? env.AI_REQUEST_RETRY_COUNT,
-      },
-      {
-        key: 'OPENAI' as const,
-        enabled: byKey.get('OPENAI')?.enabled ?? true,
-        configured: openaiConfigured,
-        isPrimary: byKey.get('OPENAI')?.isPrimary ?? DEFAULT_PROVIDER === 'OPENAI',
-        model: byKey.get('OPENAI')?.model ?? env.OPENAI_MODEL ?? PROVIDER_DEFAULT_MODELS.OPENAI,
-        timeoutMs: byKey.get('OPENAI')?.timeoutMs ?? env.OPENAI_TIMEOUT_MS,
-        maxRetries: byKey.get('OPENAI')?.maxRetries ?? env.AI_REQUEST_RETRY_COUNT,
-      },
-    ] satisfies ProviderDescriptor[];
+      return {
+        key,
+        enabled: dbConfig?.enabled ?? envConfig.enabled ?? true,
+        configured: envConfig.apiKey.trim().length > 0,
+        isPrimary: dbConfig?.isPrimary ?? env.AI_PRIMARY_PROVIDER === key,
+        model: dbConfig?.model ?? envConfig.model ?? PROVIDER_DEFAULT_MODELS[key],
+        timeoutMs: dbConfig?.timeoutMs ?? envConfig.timeoutMs ?? 25_000,
+        maxRetries: dbConfig?.maxRetries ?? env.AI_REQUEST_RETRY_COUNT,
+        healthState: health.state,
+        cooldownRemainingMs: health.cooldownRemainingMs,
+        runtimeSource: dbConfig
+          ? 'db'
+          : envConfig.model || envConfig.enabled
+            ? 'env'
+            : 'default',
+      } satisfies ProviderDescriptor;
+    });
 
-    const normalizedProviders: ProviderDescriptor[] = providers.map((provider) => ({
-      ...provider,
-      enabled: provider.enabled && provider.configured,
-    }));
+    return providers;
+  }
 
-    const primary = normalizedProviders.find((provider) => provider.isPrimary && provider.enabled)?.key;
+  private resolveProviderOrder(
+    providers: ProviderDescriptor[],
+    preferred: ProviderKey | null | undefined,
+    fallback: ProviderKey | null | undefined,
+  ) {
+    const availableProviders = providers.filter((provider) => provider.enabled && provider.configured);
+    const availableKeys = new Set(availableProviders.map((provider) => provider.key));
+
+    const defaultProvider =
+      [preferred, env.AI_PRIMARY_PROVIDER, DEFAULT_PROVIDER]
+        .filter((candidate): candidate is ProviderKey => Boolean(candidate))
+        .find((candidate) => availableKeys.has(candidate)) ??
+      availableProviders[0]?.key ??
+      env.AI_PRIMARY_PROVIDER;
+
+    const fallbackProvider =
+      [fallback, env.AI_FALLBACK_PROVIDER, FALLBACK_PROVIDER]
+        .filter((candidate): candidate is ProviderKey => Boolean(candidate) && candidate !== defaultProvider)
+        .find((candidate) => availableKeys.has(candidate)) ??
+      availableProviders.find((provider) => provider.key !== defaultProvider)?.key ??
+      null;
 
     return {
-      defaultProvider:
-        primary ??
-        normalizedProviders.find((provider) => provider.key === DEFAULT_PROVIDER && provider.enabled)?.key ??
-        normalizedProviders.find((provider) => provider.enabled)?.key ??
-        FALLBACK_PROVIDER,
-      fallbackProvider:
-        normalizedProviders.find((provider) => provider.key === FALLBACK_PROVIDER && provider.enabled)?.key ??
-        normalizedProviders.find((provider) => provider.key !== primary && provider.enabled)?.key ??
-        null,
-      providers: normalizedProviders,
+      defaultProvider,
+      fallbackProvider,
     };
   }
 
-  async diagnoseProviders(providersMap: Record<ProviderKey, AIProvider | null>) {
+  async listProviders() {
+    const providers = await this.readDescriptors();
+    const resolved = this.resolveProviderOrder(providers, providers.find((provider) => provider.isPrimary)?.key, env.AI_FALLBACK_PROVIDER);
+
+    return {
+      ...resolved,
+      providers,
+      localFallbackEnabled: env.AI_LOCAL_FALLBACK_ENABLED,
+    };
+  }
+
+  async diagnoseProviders(
+    providersMap: Record<ProviderKey, AIProvider | null>,
+    requestedProvider?: ProviderKey,
+  ) {
     const providerState = await this.listProviders();
     const checkedAt = new Date().toISOString();
+    const selectedProviders = requestedProvider
+      ? providerState.providers.filter((provider) => provider.key === requestedProvider)
+      : providerState.providers;
 
     const providers = await Promise.all(
-      providerState.providers.map(async (provider): Promise<ProviderConnectivityDescriptor> => {
-        if (!provider.configured) {
-          return {
-            ...provider,
-            status: 'missing_key',
-            message: 'Chưa có API key trên server cho provider này.',
-            checkedAt,
-            latencyMs: null,
-          };
-        }
-
+      selectedProviders.map(async (provider): Promise<ProviderConnectivityDescriptor> => {
         if (!provider.enabled) {
           return {
             ...provider,
@@ -98,12 +146,35 @@ export class ProvidersService {
           };
         }
 
+        if (!provider.configured) {
+          return {
+            ...provider,
+            status: 'missing_key',
+            message: 'Provider chưa có API key hợp lệ trên server.',
+            checkedAt,
+            latencyMs: null,
+          };
+        }
+
+        const health = this.providerHealthService.snapshot(provider.key);
+        if (!health.available) {
+          return {
+            ...provider,
+            status: 'cooldown',
+            message: `Provider đang trong thời gian làm nguội sau chuỗi lỗi gần đây. Còn khoảng ${Math.ceil(
+              health.cooldownRemainingMs / 1000,
+            )} giây trước khi thử lại.`,
+            checkedAt,
+            latencyMs: null,
+          };
+        }
+
         const client = providersMap[provider.key];
         if (!client) {
           return {
             ...provider,
             status: 'missing_key',
-            message: 'Server chưa khởi tạo client cho provider này.',
+            message: 'Server chưa khởi tạo được client tương ứng cho provider này.',
             checkedAt,
             latencyMs: null,
           };
@@ -131,21 +202,16 @@ export class ProvidersService {
           return {
             ...provider,
             status: 'ready',
-            message: 'Provider đã sẵn sàng để xử lý câu hỏi học tập thực tế.',
+            message: 'Provider đang sẵn sàng cho các phiên hỏi đáp học tập.',
             checkedAt,
             latencyMs: response.latencyMs,
           };
         } catch (error) {
           const rawMessage = error instanceof Error ? error.message : 'UNKNOWN_PROVIDER_ERROR';
-          const normalizedMessage =
-            rawMessage === 'GEMINI_TIMEOUT'
-              ? 'Provider phản hồi quá chậm hoặc đang không khả dụng.'
-              : `Không thể dùng provider ngay lúc này: ${rawMessage}`;
-
           return {
             ...provider,
             status: 'error',
-            message: normalizedMessage,
+            message: `Provider chưa vượt qua bài test kết nối: ${rawMessage}`,
             checkedAt,
             latencyMs: null,
           };
@@ -153,9 +219,16 @@ export class ProvidersService {
       }),
     );
 
+    const resolved = this.resolveProviderOrder(
+      providerState.providers,
+      providerState.defaultProvider,
+      providerState.fallbackProvider,
+    );
+
     return {
-      ...providerState,
+      ...resolved,
       checkedAt,
+      localFallbackEnabled: providerState.localFallbackEnabled,
       realAiAvailable: providers.some((provider) => provider.status === 'ready'),
       providers,
     };

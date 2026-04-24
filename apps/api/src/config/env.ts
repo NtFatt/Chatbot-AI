@@ -1,11 +1,20 @@
 import 'dotenv/config';
 
+import {
+  DEFAULT_PROVIDER,
+  FALLBACK_PROVIDER,
+  PROVIDER_DEFAULT_MODELS,
+  PROVIDER_KEYS,
+  type ProviderKey,
+} from '@chatbot-ai/shared';
 import { z } from 'zod';
 
 const booleanish = z
   .string()
   .optional()
   .transform((value) => value === 'true');
+
+const providerKeySchema = z.enum(PROVIDER_KEYS);
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -27,11 +36,16 @@ const envSchema = z.object({
   OPENAI_MODEL: z.string().default('gpt-5.4-mini'),
   OPENAI_ENABLED: booleanish.default('true'),
   OPENAI_TIMEOUT_MS: z.coerce.number().int().min(5000).default(25000),
+  AI_PRIMARY_PROVIDER: providerKeySchema.optional(),
+  AI_FALLBACK_PROVIDER: providerKeySchema.optional(),
   AI_MAX_CONTEXT_MESSAGES: z.coerce.number().int().min(4).max(30).default(10),
   AI_MAX_PROMPT_CHARS: z.coerce.number().int().min(1000).default(12000),
   AI_REQUEST_RETRY_COUNT: z.coerce.number().int().min(0).max(3).default(1),
+  AI_PROVIDER_FAILURE_THRESHOLD: z.coerce.number().int().min(1).max(10).default(3),
+  AI_PROVIDER_COOLDOWN_MS: z.coerce.number().int().min(30_000).max(600_000).default(90_000),
+  AI_LOCAL_FALLBACK_ENABLED: booleanish.default('true'),
+  AI_STARTUP_STRICT: booleanish.default('false'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
-  
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -41,7 +55,95 @@ if (!parsed.success) {
   throw new Error('Invalid environment variables');
 }
 
+const normalizeOptionalSecret = (value?: string) => {
+  const trimmed = value?.trim() ?? '';
+  return trimmed.length > 0 ? trimmed : '';
+};
+
 export const env = {
   ...parsed.data,
+  GEMINI_API_KEY: normalizeOptionalSecret(parsed.data.GEMINI_API_KEY),
+  GEMINI_MODEL: parsed.data.GEMINI_MODEL || PROVIDER_DEFAULT_MODELS.GEMINI,
+  OPENAI_API_KEY: normalizeOptionalSecret(parsed.data.OPENAI_API_KEY),
+  OPENAI_MODEL: parsed.data.OPENAI_MODEL || PROVIDER_DEFAULT_MODELS.OPENAI,
+  AI_PRIMARY_PROVIDER: parsed.data.AI_PRIMARY_PROVIDER ?? DEFAULT_PROVIDER,
+  AI_FALLBACK_PROVIDER:
+    (parsed.data.AI_FALLBACK_PROVIDER ?? FALLBACK_PROVIDER) ===
+    (parsed.data.AI_PRIMARY_PROVIDER ?? DEFAULT_PROVIDER)
+      ? ([...PROVIDER_KEYS].find(
+          (provider) => provider !== (parsed.data.AI_PRIMARY_PROVIDER ?? DEFAULT_PROVIDER),
+        ) as ProviderKey)
+      : (parsed.data.AI_FALLBACK_PROVIDER ?? FALLBACK_PROVIDER),
   clientOrigins: parsed.data.CLIENT_ORIGIN.split(',').map((origin) => origin.trim()),
+};
+
+export interface AIStartupIssue {
+  provider?: ProviderKey;
+  severity: 'warning' | 'error';
+  code:
+    | 'PROVIDER_ENABLED_MISSING_KEY'
+    | 'ALL_PROVIDERS_DISABLED'
+    | 'NO_CONFIGURED_PROVIDER'
+    | 'LOCAL_FALLBACK_DISABLED_NO_PROVIDER';
+  message: string;
+}
+
+export const getAIStartupIssues = (): AIStartupIssue[] => {
+  const issues: AIStartupIssue[] = [];
+  const providerEnv = [
+    {
+      provider: 'GEMINI' as const,
+      enabled: env.GEMINI_ENABLED,
+      configured: Boolean(env.GEMINI_API_KEY),
+    },
+    {
+      provider: 'OPENAI' as const,
+      enabled: env.OPENAI_ENABLED,
+      configured: Boolean(env.OPENAI_API_KEY),
+    },
+  ];
+  const enabledProviders = providerEnv.filter((provider) => provider.enabled);
+  const configuredProviders = enabledProviders.filter((provider) => provider.configured);
+
+  enabledProviders
+    .filter((provider) => !provider.configured)
+    .forEach((provider) => {
+      issues.push({
+        provider: provider.provider,
+        severity: env.AI_STARTUP_STRICT ? 'error' : 'warning',
+        code: 'PROVIDER_ENABLED_MISSING_KEY',
+        message: `${provider.provider} đang bật nhưng chưa có API key hợp lệ.`,
+      });
+    });
+
+  if (enabledProviders.length === 0) {
+    issues.push({
+      severity: env.AI_LOCAL_FALLBACK_ENABLED ? 'warning' : 'error',
+      code: 'ALL_PROVIDERS_DISABLED',
+      message: env.AI_LOCAL_FALLBACK_ENABLED
+        ? 'Cả Gemini và OpenAI đều đang tắt; hệ thống chỉ còn chạy bằng local fallback.'
+        : 'Cả Gemini và OpenAI đều đang tắt và local fallback cũng không thể thay thế provider thật.',
+    });
+  }
+
+  if (enabledProviders.length > 0 && configuredProviders.length === 0) {
+    issues.push({
+      severity:
+        env.AI_STARTUP_STRICT || !env.AI_LOCAL_FALLBACK_ENABLED ? 'error' : 'warning',
+      code: 'NO_CONFIGURED_PROVIDER',
+      message: env.AI_LOCAL_FALLBACK_ENABLED
+        ? 'Chưa có provider AI thật nào sẵn sàng; hệ thống sẽ phải dùng local fallback.'
+        : 'Chưa có provider AI thật nào sẵn sàng và local fallback đang tắt.',
+    });
+  }
+
+  if (configuredProviders.length === 0 && !env.AI_LOCAL_FALLBACK_ENABLED) {
+    issues.push({
+      severity: 'error',
+      code: 'LOCAL_FALLBACK_DISABLED_NO_PROVIDER',
+      message: 'Không có provider AI thật nào khả dụng trong khi local fallback đang tắt.',
+    });
+  }
+
+  return issues;
 };

@@ -27,7 +27,26 @@ type RecoveryState = 'idle' | 'syncing' | 'error';
 const assistantClientId = (clientMessageId: string) => `${clientMessageId}:assistant`;
 
 const sortMessages = (messages: ChatMessage[]) =>
-  [...messages].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+  [...messages].sort((left, right) => {
+    if (left.parentClientMessageId === right.clientMessageId) {
+      return 1;
+    }
+
+    if (right.parentClientMessageId === left.clientMessageId) {
+      return -1;
+    }
+
+    const createdComparison = left.createdAt.localeCompare(right.createdAt);
+    if (createdComparison !== 0) {
+      return createdComparison;
+    }
+
+    if (left.senderType !== right.senderType) {
+      return left.senderType === 'user' ? -1 : 1;
+    }
+
+    return left.clientMessageId.localeCompare(right.clientMessageId);
+  });
 
 const upsertMessage = (items: ChatMessage[], next: ChatMessage) => {
   const index = items.findIndex(
@@ -64,12 +83,20 @@ const optimisticMessage = (
     id: input.clientMessageId,
     sessionId: input.sessionId,
     clientMessageId: input.clientMessageId,
+    parentClientMessageId: input.parentClientMessageId ?? null,
     senderType: input.senderType,
     content: input.content,
     status: input.status,
     provider: input.provider ?? null,
     model: input.model ?? null,
+    providerRequestId: input.providerRequestId ?? null,
+    responseFinishReason: input.responseFinishReason ?? null,
     latencyMs: input.latencyMs ?? null,
+    inputTokens: input.inputTokens ?? null,
+    outputTokens: input.outputTokens ?? null,
+    totalTokens: input.totalTokens ?? null,
+    fallbackUsed: input.fallbackUsed ?? false,
+    retrievalSnapshot: input.retrievalSnapshot ?? null,
     errorCode: input.errorCode ?? null,
     createdAt: input.createdAt ?? now,
     updatedAt: input.updatedAt ?? now,
