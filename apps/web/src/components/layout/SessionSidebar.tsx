@@ -1,10 +1,21 @@
-import { MessageSquareMore, Plus, Settings2, Trash2 } from 'lucide-react';
+import { BookOpen, MessageSquare, Plus, Settings2, Trash2, X } from 'lucide-react';
 
 import type { ChatSessionSummary } from '@chatbot-ai/shared';
 
 import { cn } from '../../utils/cn';
-import { formatRelativeTime, stripMarkdownPreview } from '../../utils/format';
-import { Button } from '../ui/Button';
+import { formatRelativeTime, groupSessionsByRecency, stripMarkdownPreview } from '../../utils/format';
+import { IconButton } from '../ui/IconButton';
+
+interface SessionSidebarProps {
+  sessions: ChatSessionSummary[];
+  activeSessionId: string | null;
+  onCreate: () => void;
+  onDelete: (sessionId: string) => void;
+  onOpenSettings: () => void;
+  onSelect: (sessionId: string) => void;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
+}
 
 export const SessionSidebar = ({
   sessions,
@@ -13,112 +24,191 @@ export const SessionSidebar = ({
   onDelete,
   onOpenSettings,
   onSelect,
-}: {
-  sessions: ChatSessionSummary[];
-  activeSessionId: string | null;
-  onCreate: () => void;
-  onDelete: (sessionId: string) => void;
-  onOpenSettings: () => void;
-  onSelect: (sessionId: string) => void;
-}) => {
+  isCollapsed = false,
+  onToggleCollapse,
+}: SessionSidebarProps) => {
+  const groupedSessions = groupSessionsByRecency(sessions);
+
+  if (isCollapsed) {
+    return (
+      <aside className="flex h-full w-14 flex-col items-center border-r border-black/[0.05] py-3 dark:border-white/10">
+        <div className="mb-3 flex flex-col items-center gap-2">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-ocean/10 text-ocean dark:bg-cyan/15 dark:text-cyan">
+            <BookOpen className="h-5 w-5" />
+          </div>
+        </div>
+
+        <IconButton
+          className="mb-4"
+          icon={<Plus className="h-4 w-4" />}
+          onClick={onCreate}
+          size="sm"
+          tooltip="New conversation"
+        />
+
+        <div className="flex flex-1 flex-col items-center gap-1 overflow-y-auto">
+          {sessions.slice(0, 12).map((session) => {
+            const isActive = activeSessionId === session.id;
+            return (
+              <button
+                className={cn(
+                  'focus-ring group relative flex h-10 w-10 items-center justify-center rounded-lg transition',
+                  isActive
+                    ? 'bg-ocean/15 text-ocean dark:bg-cyan/20 dark:text-cyan'
+                    : 'text-ink/50 hover:bg-black/[0.04] hover:text-ink dark:text-slate-500 dark:hover:bg-white/[0.06] dark:hover:text-white',
+                )}
+                key={session.id}
+                onClick={() => onSelect(session.id)}
+                title={session.title}
+                type="button"
+              >
+                <MessageSquare className="h-4 w-4" />
+                {isActive && (
+                  <span className="absolute inset-y-1 left-0 w-0.5 rounded-r-full bg-ocean dark:bg-cyan" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-auto flex flex-col items-center gap-1">
+          <IconButton
+            icon={<Settings2 className="h-4 w-4" />}
+            onClick={onOpenSettings}
+            size="sm"
+            tooltip="Settings"
+          />
+          {onToggleCollapse && (
+            <IconButton
+              icon={<X className="h-4 w-4" />}
+              onClick={onToggleCollapse}
+              size="sm"
+              tooltip="Expand sidebar"
+            />
+          )}
+        </div>
+      </aside>
+    );
+  }
+
   return (
-    <aside className="glass-panel flex h-full min-h-0 flex-col overflow-hidden p-4">
-      <div className="mb-4 shrink-0 flex items-center justify-between gap-3">
-        <p className="font-display text-[34px] font-semibold leading-none tracking-[-0.05em]">Chat</p>
-        <Button className="gap-2 px-4 py-2.5 text-sm" data-testid="create-session" onClick={onCreate} type="button">
-          <Plus className="h-4 w-4" />
-          Mới
-        </Button>
+    <aside className="flex h-full min-h-0 flex-col overflow-hidden">
+      <div className="flex items-center justify-between border-b border-black/[0.05] px-3 py-3 dark:border-white/10">
+        <div className="flex items-center gap-2">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-ocean/10 text-ocean dark:bg-cyan/15 dark:text-cyan">
+            <BookOpen className="h-4 w-4" />
+          </div>
+          <span className="text-sm font-semibold text-ink dark:text-slate-100">Study</span>
+        </div>
+
+        <div className="flex items-center gap-1">
+          <IconButton
+            className="h-7 w-7"
+            icon={<Plus className="h-3.5 w-3.5" />}
+            onClick={onCreate}
+            size="sm"
+            tooltip="New conversation"
+          />
+          {onToggleCollapse && (
+            <IconButton
+              className="h-7 w-7"
+              icon={
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path d="M11 19l-7-7 7-7m8 14l-7-7 7-7" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
+                </svg>
+              }
+              onClick={onToggleCollapse}
+              size="sm"
+              tooltip="Collapse sidebar"
+            />
+          )}
+        </div>
       </div>
 
-      <div className="app-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto pr-2">
+      <div className="app-scrollbar min-h-0 flex-1 overflow-y-auto py-2">
         {sessions.length === 0 ? (
-          <div className="rounded-[22px] border border-dashed border-black/10 px-4 py-5 text-sm leading-7 text-ink/65 dark:border-white/10 dark:text-slate-400">
-            Chưa có cuộc trò chuyện nào. Tạo phiên mới để bắt đầu.
+          <div className="px-3 py-6 text-center">
+            <MessageSquare className="mx-auto h-8 w-8 text-ink/20 dark:text-slate-600" />
+            <p className="mt-2 text-xs text-ink/50 dark:text-slate-500">No conversations yet</p>
           </div>
         ) : null}
 
-        {sessions.map((session) => {
-          const preview =
-            stripMarkdownPreview(session.lastMessagePreview) ||
-            'Chạm để mở lại cuộc trò chuyện và tiếp tục học.';
+        {groupedSessions.map((group) => (
+          <div key={group.label}>
+            <p className="section-kicker px-3 py-2">{group.label}</p>
 
-          return (
-            <div
-              className={cn(
-                'focus-ring group w-full rounded-[22px] border px-3.5 py-3.5 text-left transition',
-                activeSessionId === session.id
-                  ? 'border-transparent bg-ink text-white shadow-soft dark:bg-white dark:text-ink'
-                  : 'border-black/5 bg-white/70 hover:border-black/10 hover:bg-white dark:border-white/8 dark:bg-slate-900/55 dark:hover:bg-slate-900/80',
-              )}
-              key={session.id}
-              data-testid={`session-item-${session.id}`}
-              onClick={() => onSelect(session.id)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  onSelect(session.id);
-                }
-              }}
-              role="button"
-              tabIndex={0}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <MessageSquareMore className="h-3.5 w-3.5 shrink-0" />
-                    <p className="truncate text-sm font-semibold">{session.title}</p>
+            <div className="space-y-0.5 px-2">
+              {group.items.map((session) => {
+                const preview =
+                  stripMarkdownPreview(session.lastMessagePreview) || 'Continue learning';
+                const isActive = activeSessionId === session.id;
+
+                return (
+                  <div
+                    className={cn(
+                      'group relative flex items-center gap-2.5 rounded-lg px-2 py-2 transition',
+                      isActive
+                        ? 'bg-ocean/10 text-ocean dark:bg-cyan/15 dark:text-cyan'
+                        : 'text-ink/70 hover:bg-black/[0.03] hover:text-ink dark:text-slate-400 dark:hover:bg-white/[0.04] dark:hover:text-white',
+                    )}
+                    data-testid={`session-item-${session.id}`}
+                    key={session.id}
+                    onClick={() => onSelect(session.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        onSelect(session.id);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                  >
+                    {isActive && (
+                      <span className="absolute inset-y-1.5 left-0 w-0.5 rounded-r-full bg-ocean dark:bg-cyan" />
+                    )}
+
+                    <MessageSquare className="h-3.5 w-3.5 shrink-0 opacity-60" />
+
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium leading-tight">{session.title}</p>
+                      <p className="truncate text-xs text-current/50">{preview}</p>
+                    </div>
+
+                    <div className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
+                      <button
+                        aria-label={`Delete ${session.title}`}
+                        className="focus-ring flex h-6 w-6 items-center justify-center rounded-md text-ink/40 transition hover:bg-red-500/10 hover:text-red-500 dark:text-slate-600"
+                        data-testid={`delete-session-${session.id}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onDelete(session.id);
+                        }}
+                        title="Delete"
+                        type="button"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+
+                    <span className="shrink-0 text-[10px] text-current/40">{formatRelativeTime(session.updatedAt)}</span>
                   </div>
-                  <p className="mt-2 line-clamp-2 text-[13px] leading-6 text-current/68">{preview}</p>
-                </div>
-                <span
-                  className={cn(
-                    'inline-flex rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.15em]',
-                    activeSessionId === session.id ? 'border-white/20' : 'border-black/10 dark:border-white/10',
-                  )}
-                >
-                  {session.providerPreference}
-                </span>
-              </div>
-
-              <div className="mt-3 flex items-center justify-between">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-current/55">
-                  {formatRelativeTime(session.updatedAt)}
-                </p>
-                <button
-                  aria-label={`Xóa phiên ${session.title}`}
-                  className="focus-ring inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] text-current/72 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100"
-                  data-testid={`delete-session-${session.id}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onDelete(session.id);
-                  }}
-                  type="button"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Xóa
-                </button>
-              </div>
+                );
+              })}
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
 
-      <div className="mt-4 shrink-0 border-t border-black/5 pt-4 dark:border-white/10">
-        <button
-          className="focus-ring flex w-full items-center gap-3 rounded-[20px] border border-black/8 bg-white/72 px-3.5 py-3 text-left transition hover:border-black/12 hover:bg-white dark:border-white/10 dark:bg-slate-900/55 dark:hover:bg-slate-900/75"
-          data-testid="open-settings"
-          onClick={onOpenSettings}
-          type="button"
-        >
-          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-black/8 bg-black/[0.03] dark:border-white/10 dark:bg-white/[0.04]">
-            <Settings2 className="h-4 w-4" />
-          </span>
-          <div>
-            <p className="text-sm font-semibold">Settings</p>
-            <p className="mt-0.5 text-xs leading-5 text-ink/58 dark:text-slate-400">Provider, tài liệu, giao diện.</p>
-          </div>
-        </button>
+      <div className="border-t border-black/[0.05] px-2 py-2 dark:border-white/10">
+        <div className="flex items-center justify-center gap-1">
+          <IconButton
+            icon={<Settings2 className="h-4 w-4" />}
+            onClick={onOpenSettings}
+            size="sm"
+            tooltip="Settings"
+            variant="ghost"
+          />
+        </div>
       </div>
     </aside>
   );

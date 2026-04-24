@@ -32,6 +32,26 @@ export interface MaterialRecommendation {
   isFeatured: boolean;
 }
 
+export interface RetrievalMaterialSource extends Record<string, unknown> {
+  id: string;
+  title: string;
+  url: string;
+  snippet: string;
+  score: number;
+  reason: string[];
+  subjectLabel: string;
+  topicLabel: string | null;
+  type: MaterialType;
+  level: MaterialLevel;
+}
+
+export interface RetrievalSnapshot extends Record<string, unknown> {
+  inferredSubject?: string | null;
+  inferredTopic?: string | null;
+  queryExpansion: string[];
+  materials: RetrievalMaterialSource[];
+}
+
 export interface MaterialSearchParams {
   q?: string;
   subject?: string;

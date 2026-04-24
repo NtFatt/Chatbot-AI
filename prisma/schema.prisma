@@ -47,6 +47,13 @@ enum MessageStatus {
   needs_sync
 }
 
+enum AIFinishReason {
+  stop
+  length
+  error
+  unknown
+}
+
 model User {
   id                String        @id @default(uuid())
   displayName       String
@@ -56,6 +63,7 @@ model User {
   updatedAt         DateTime      @updatedAt
   authSessions      AuthSession[]
   chatSessions      ChatSession[]
+  aiUsageLogs       AiUsageLog[]
 
   @@map("users")
 }
@@ -99,6 +107,7 @@ model ChatSession {
   user               User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages           Message[]
   recommendations    RecommendationHistory[]
+  aiUsageLogs        AiUsageLog[]
 
   @@index([userId, updatedAt(sort: Desc)])
   @@map("chat_sessions")
@@ -108,19 +117,29 @@ model Message {
   id              String        @id @default(uuid())
   sessionId       String
   clientMessageId String        @unique
+  parentClientMessageId String?
   senderType      SenderType
   content         String
   status          MessageStatus @default(sent)
   provider        ProviderKey?
   model           String?
+  providerRequestId String?
+  responseFinishReason AIFinishReason?
   latencyMs       Int?
+  inputTokens     Int?
+  outputTokens    Int?
+  totalTokens     Int?
+  retrievalSnapshot Json?
+  fallbackUsed    Boolean       @default(false)
   errorCode       String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   session         ChatSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  aiUsageLogs     AiUsageLog[]
 
   @@index([sessionId, createdAt])
   @@index([sessionId, updatedAt])
+  @@index([sessionId, parentClientMessageId])
   @@map("messages")
 }
 
@@ -191,4 +210,44 @@ model RecommendationHistory {
 
   @@index([sessionId, createdAt])
   @@map("recommendation_history")
+}
+
+model AiUsageLog {
+  id            String      @id @default(uuid())
+  userId        String
+  sessionId     String
+  messageId     String?
+  provider      ProviderKey
+  model         String
+  inputTokens   Int?
+  outputTokens  Int?
+  totalTokens   Int?
+  latencyMs     Int
+  success       Boolean     @default(true)
+  fallbackUsed  Boolean     @default(false)
+  estimatedCost Decimal?    @db.Decimal(12, 6)
+  createdAt     DateTime    @default(now())
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session       ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  message       Message?    @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@index([provider, createdAt])
+  @@index([sessionId, createdAt])
+  @@index([userId, createdAt])
+  @@map("ai_usage_logs")
+}
+
+model ProviderIncident {
+  id           String      @id @default(uuid())
+  provider     ProviderKey
+  model        String
+  errorCode    String
+  errorMessage String
+  retryable    Boolean     @default(false)
+  requestId    String?
+  createdAt    DateTime    @default(now())
+
+  @@index([provider, createdAt])
+  @@index([errorCode, createdAt])
+  @@map("provider_incidents")
 }

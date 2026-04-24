@@ -1,5 +1,6 @@
 import type { ProviderKey } from '../constants/providers';
 import type { AIFinishReason, MessageStatus, SenderType } from '../constants/ui';
+import type { RetrievalSnapshot } from './materials';
 
 export interface ChatSessionSummary {
   id: string;
@@ -16,12 +17,20 @@ export interface ChatMessage {
   id: string;
   sessionId: string;
   clientMessageId: string;
+  parentClientMessageId: string | null;
   senderType: SenderType;
   content: string;
   status: MessageStatus;
   provider: ProviderKey | null;
   model: string | null;
+  providerRequestId: string | null;
+  responseFinishReason: AIFinishReason | null;
   latencyMs: number | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+  fallbackUsed: boolean;
+  retrievalSnapshot: RetrievalSnapshot | null;
   errorCode: string | null;
   createdAt: string;
   updatedAt: string;
@@ -50,6 +59,8 @@ export interface AIChatResult {
   fallbackUsed: boolean;
   warnings: string[];
   confidenceNote?: string;
+  providerRequestId?: string;
+  retrievalSnapshot?: RetrievalSnapshot | null;
 }
 
 export interface ChatAskResponse {

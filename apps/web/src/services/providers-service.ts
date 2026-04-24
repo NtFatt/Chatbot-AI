@@ -5,6 +5,7 @@ import { apiRequest } from './api-client';
 export interface ProviderResponse {
   defaultProvider: ProviderKey;
   fallbackProvider: ProviderKey | null;
+  localFallbackEnabled: boolean;
   providers: Array<{
     key: ProviderKey;
     enabled: boolean;
@@ -13,6 +14,9 @@ export interface ProviderResponse {
     model: string;
     timeoutMs: number;
     maxRetries: number;
+    healthState: 'healthy' | 'cooldown' | 'degraded';
+    cooldownRemainingMs: number;
+    runtimeSource: 'db' | 'env' | 'default';
   }>;
 }
 
@@ -23,6 +27,7 @@ export interface ProviderDiagnosticsResponse {
   fallbackProvider: ProviderKey | null;
   checkedAt: string;
   realAiAvailable: boolean;
+  localFallbackEnabled: boolean;
   providers: Array<{
     key: ProviderKey;
     enabled: boolean;
@@ -31,7 +36,10 @@ export interface ProviderDiagnosticsResponse {
     model: string;
     timeoutMs: number;
     maxRetries: number;
-    status: 'ready' | 'missing_key' | 'disabled' | 'error';
+    healthState: 'healthy' | 'cooldown' | 'degraded';
+    cooldownRemainingMs: number;
+    runtimeSource: 'db' | 'env' | 'default';
+    status: 'ready' | 'missing_key' | 'disabled' | 'error' | 'cooldown';
     message: string;
     checkedAt: string;
     latencyMs: number | null;
@@ -40,3 +48,40 @@ export interface ProviderDiagnosticsResponse {
 
 export const testProviders = () =>
   apiRequest<ProviderDiagnosticsResponse>('/api/providers/test', { method: 'POST' });
+
+export interface ProviderMetricsResponse {
+  items: Array<{
+    provider: ProviderKey;
+    totalRequests: number;
+    successCount: number;
+    failureCount: number;
+    fallbackCount: number;
+    avgLatencyMs: number;
+    totalTokens: number;
+    estimatedCost: number;
+    lastSeenAt: string | null;
+  }>;
+  total: number;
+}
+
+export interface ProviderIncidentsResponse {
+  items: Array<{
+    id: string;
+    provider: ProviderKey;
+    model: string;
+    errorCode: string;
+    errorMessage: string;
+    retryable: boolean;
+    requestId: string | null;
+    createdAt: string;
+  }>;
+  total: number;
+}
+
+export const fetchProviderMetrics = () =>
+  apiRequest<ProviderMetricsResponse>('/api/providers/metrics', { method: 'GET' });
+
+export const fetchProviderIncidents = (limit = 20) =>
+  apiRequest<ProviderIncidentsResponse>(`/api/providers/incidents?limit=${limit}`, {
+    method: 'GET',
+  });

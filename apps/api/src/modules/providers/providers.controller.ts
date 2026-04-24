@@ -14,7 +14,11 @@ export const createProvidersController = (
     return success(req, res, providers);
   }),
   test: asyncHandler(async (req, res) => {
-    const providers = await providersService.diagnoseProviders(providersMap);
+    const provider =
+      typeof req.query.provider === 'string' && ['GEMINI', 'OPENAI'].includes(req.query.provider)
+        ? (req.query.provider as ProviderKey)
+        : undefined;
+    const providers = await providersService.diagnoseProviders(providersMap, provider);
     return success(req, res, providers);
   }),
 });

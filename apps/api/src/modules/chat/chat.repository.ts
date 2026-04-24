@@ -1,4 +1,4 @@
-import type { MessageStatus, ProviderKey, SenderType } from '@prisma/client';
+import type { MessageStatus, ProviderKey, SenderType, AIFinishReason, Prisma } from '@prisma/client';
 
 import { prisma } from '../../config/prisma';
 
@@ -68,14 +68,16 @@ export class ChatRepository {
   }
 
   async getContextMessages(sessionId: string, limit: number) {
-    return prisma.message.findMany({
+    const messages = await prisma.message.findMany({
       where: {
         sessionId,
         status: 'sent',
       },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: 'desc' },
       take: limit,
     });
+
+    return messages.reverse();
   }
 
   async findMessageByClientMessageId(clientMessageId: string) {
@@ -87,11 +89,21 @@ export class ChatRepository {
   async createMessage(input: {
     sessionId: string;
     clientMessageId: string;
+    parentClientMessageId?: string;
     senderType: SenderType;
     content: string;
     status: MessageStatus;
     provider?: ProviderKey;
     model?: string;
+    providerRequestId?: string;
+    responseFinishReason?: AIFinishReason;
+    latencyMs?: number;
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+    fallbackUsed?: boolean;
+    retrievalSnapshot?: Prisma.InputJsonValue;
+    errorCode?: string | null;
   }) {
     return prisma.message.create({
       data: input,
@@ -104,7 +116,14 @@ export class ChatRepository {
     status?: MessageStatus;
     provider?: ProviderKey | null;
     model?: string | null;
+    providerRequestId?: string | null;
+    responseFinishReason?: AIFinishReason | null;
     latencyMs?: number | null;
+    inputTokens?: number | null;
+    outputTokens?: number | null;
+    totalTokens?: number | null;
+    fallbackUsed?: boolean;
+    retrievalSnapshot?: Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput | null;
     errorCode?: string | null;
   }) {
     return prisma.message.update({
@@ -114,7 +133,14 @@ export class ChatRepository {
         status: input.status,
         provider: input.provider,
         model: input.model,
+        providerRequestId: input.providerRequestId,
+        responseFinishReason: input.responseFinishReason,
         latencyMs: input.latencyMs,
+        inputTokens: input.inputTokens,
+        outputTokens: input.outputTokens,
+        totalTokens: input.totalTokens,
+        fallbackUsed: input.fallbackUsed,
+        retrievalSnapshot: input.retrievalSnapshot ?? undefined,
         errorCode: input.errorCode,
       },
     });

@@ -47,6 +47,7 @@ export class GeminiAdapter implements AIProvider {
 
     return {
       text,
+      providerRequestId: undefined,
       finishReason: text ? 'stop' : 'unknown',
       latencyMs: Date.now() - startedAt,
     };

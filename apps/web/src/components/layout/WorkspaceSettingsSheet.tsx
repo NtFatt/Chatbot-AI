@@ -1,25 +1,21 @@
 import { useEffect } from 'react';
-import {
-  LogOut,
-  Moon,
-  Radio,
-  Save,
-  Settings2,
-  SlidersHorizontal,
-  Sun,
-  X,
-} from 'lucide-react';
+import { LogOut, Moon, Radio, Save, Settings2, Sun, X } from 'lucide-react';
 
-import type { ChatSessionSummary, MaterialRecommendation, ProviderKey } from '@chatbot-ai/shared';
+import type { ChatSessionSummary, ProviderKey } from '@chatbot-ai/shared';
 
+import type {
+  ProviderDiagnosticsResponse,
+  ProviderIncidentsResponse,
+  ProviderMetricsResponse,
+} from '../../services/providers-service';
+import type { ChatUsageResponse } from '../../services/usage-service';
 import { cn } from '../../utils/cn';
-import type { ProviderDiagnosticsResponse } from '../../services/providers-service';
-import { MaterialsPanel } from '../materials/MaterialsPanel';
 import { Button } from '../ui/Button';
+import { ProviderDiagnosticsPanel } from './ProviderDiagnosticsPanel';
 
 const providerDescriptions: Record<ProviderKey, string> = {
-  GEMINI: 'Ưu tiên tốc độ phản hồi và phù hợp cho các phiên học cần trao đổi nhanh.',
-  OPENAI: 'Phù hợp hơn khi bạn muốn lời giải mạch lạc, chi tiết và có chiều sâu hơn.',
+  GEMINI: 'Phản hồi nhanh, phù hợp cho các vòng hỏi đáp liên tục khi đang học.',
+  OPENAI: 'Hợp hơn khi bạn muốn lời giải kỹ, mạch lạc và có chiều sâu phân tích.',
 };
 
 const connectionLabels = {
@@ -34,56 +30,46 @@ export const WorkspaceSettingsSheet = ({
   currentSession,
   diagnostics,
   diagnosticsError,
-  diagnosticsMeta,
   diagnosticsLoading,
   draftTitle,
-  errorMessage,
-  errorMeta,
   hasExternalProviders,
-  isLoading,
   isOpen,
   isSavingTitle,
-  materials,
   onClose,
   onDraftTitleChange,
   onLogout,
   onProviderChange,
-  onRetry,
   onRunDiagnostics,
   onSaveTitle,
-  onSearchChange,
   onToggleTheme,
+  providerIncidents,
+  providerMetrics,
   providerOptions,
-  searchValue,
   theme,
+  usage,
 }: {
   activeProvider: ProviderKey;
   connectionState: 'connected' | 'reconnecting' | 'disconnected';
   currentSession: ChatSessionSummary | null;
   diagnostics: ProviderDiagnosticsResponse | null;
   diagnosticsError?: string | null;
-  diagnosticsMeta?: string | null;
   diagnosticsLoading: boolean;
   draftTitle: string;
-  errorMessage?: string | null;
-  errorMeta?: string | null;
   hasExternalProviders: boolean;
-  isLoading: boolean;
   isOpen: boolean;
   isSavingTitle: boolean;
-  materials: MaterialRecommendation[];
   onClose: () => void;
   onDraftTitleChange: (value: string) => void;
   onLogout: () => void;
   onProviderChange: (provider: ProviderKey) => void;
-  onRetry?: () => void;
   onRunDiagnostics: () => void;
   onSaveTitle: () => void;
-  onSearchChange: (value: string) => void;
   onToggleTheme: () => void;
+  providerIncidents: ProviderIncidentsResponse | null;
+  providerMetrics: ProviderMetricsResponse | null;
   providerOptions: ProviderKey[];
-  searchValue: string;
   theme: 'light' | 'dark';
+  usage: ChatUsageResponse | null;
 }) => {
   useEffect(() => {
     if (!isOpen) {
@@ -113,8 +99,10 @@ export const WorkspaceSettingsSheet = ({
 
   const overallAiState = diagnostics
     ? diagnostics.realAiAvailable
-      ? 'Đã sẵn sàng'
-      : 'Chưa sẵn sàng'
+      ? 'AI thật sẵn sàng'
+      : diagnostics.localFallbackEnabled
+        ? 'Fallback đang chờ'
+        : 'Chưa khả dụng'
     : hasExternalProviders
       ? 'Chưa kiểm tra'
       : 'Thiếu cấu hình';
@@ -128,269 +116,191 @@ export const WorkspaceSettingsSheet = ({
         type="button"
       />
 
-      <aside className="relative flex h-full w-full max-w-[460px] flex-col border-l border-black/8 bg-white/92 shadow-[0_24px_90px_rgba(15,23,32,0.18)] backdrop-blur-2xl dark:border-white/10 dark:bg-[rgba(2,6,23,0.88)]">
-        <div className="flex items-start justify-between gap-3 border-b border-black/5 px-5 py-5 dark:border-white/10">
+      <aside className="relative flex h-full w-full max-w-[460px] flex-col border-l border-black/[0.06] bg-white/94 shadow-[0_24px_90px_rgba(15,23,42,0.16)] backdrop-blur-2xl dark:border-white/10 dark:bg-[rgba(2,6,23,0.9)]">
+        <div className="flex items-start justify-between gap-3 border-b border-black/[0.05] px-5 py-5 dark:border-white/10">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/8 bg-white/80 dark:border-white/10 dark:bg-slate-900/55">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-black/[0.06] bg-white/82 dark:border-white/10 dark:bg-slate-900/55">
                 <Settings2 className="h-4 w-4" />
               </span>
               <div>
-                <p className="font-display text-xl font-semibold tracking-[-0.03em]">Settings</p>
-                <p className="mt-1 text-sm leading-6 text-ink/62 dark:text-slate-300">
-                  Tùy chỉnh phiên học và mở tài liệu mà không chiếm không gian đọc chính.
+                <p className="font-display text-[22px] font-semibold tracking-[-0.04em]">Workspace settings</p>
+                <p className="mt-1 text-sm leading-6 text-ink/60 dark:text-slate-300">
+                  Tinh gọn các điều khiển hệ thống để khu chat luôn tập trung vào học tập.
                 </p>
               </div>
             </div>
           </div>
 
-          <button
-            className="focus-ring inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/8 bg-white/80 dark:border-white/10 dark:bg-slate-900/55"
-            onClick={onClose}
-            type="button"
-          >
+          <Button onClick={onClose} size="icon" type="button" variant="ghost">
             <X className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
 
         <div className="app-scrollbar min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-5">
-          <section className="border-b border-black/5 pb-5 dark:border-white/10">
+          <section className="workspace-panel-subtle px-4 py-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink/55 dark:text-slate-400">
-                  Trạng thái phiên
-                </p>
-                <p className="mt-2 text-sm leading-6 text-ink/65 dark:text-slate-300">
-                  Tất cả tùy chỉnh phụ được gom về đây để khu chat ở giữa luôn thoáng và dễ đọc.
+                <p className="section-kicker">AI status</p>
+                <p className="mt-2 text-lg font-semibold">{overallAiState}</p>
+                <p className="mt-1 text-sm leading-6 text-ink/60 dark:text-slate-400">
+                  {diagnostics?.realAiAvailable
+                    ? 'Ít nhất một provider thật đang phản hồi được.'
+                    : hasExternalProviders
+                      ? 'AI thật đã được cấu hình, nhưng bạn nên chạy diagnostics để kiểm tra readiness.'
+                      : 'Hệ thống chưa có provider thật khả dụng; local fallback sẽ tiếp tục bảo toàn luồng học.'}
                 </p>
               </div>
               <span
                 className={cn(
-                  'inline-flex items-center gap-2 rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em]',
+                  'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-medium',
                   connectionState === 'connected'
-                    ? 'border-emerald-500/18 bg-emerald-500/8 text-emerald-700 dark:text-emerald-300'
-                    : 'border-amber-500/18 bg-amber-500/8 text-amber-700 dark:text-amber-300',
+                    ? 'border-emerald-500/18 bg-emerald-500/[0.08] text-emerald-700 dark:text-emerald-300'
+                    : 'border-amber-500/18 bg-amber-500/[0.08] text-amber-700 dark:text-amber-300',
                 )}
               >
                 <Radio className="h-3.5 w-3.5" />
                 {connectionLabels[connectionState]}
               </span>
             </div>
+          </section>
 
-            <div className="mt-5 rounded-[22px] border border-black/8 bg-white/72 px-4 py-4 dark:border-white/10 dark:bg-slate-900/55">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink/55 dark:text-slate-400">
-                    Trạng thái AI thật
-                  </p>
-                  <p className="mt-2 text-sm font-semibold">{overallAiState}</p>
-                  <p className="mt-1 text-xs leading-5 text-ink/58 dark:text-slate-400">
-                    {diagnostics?.realAiAvailable
-                      ? 'Ít nhất một provider thật đang phản hồi được.'
-                      : 'Kiểm tra kết nối để biết chính xác provider nào đang dùng được.'}
-                  </p>
-                </div>
-                <Button
-                  className="h-10 bg-white/85 px-4 text-ink dark:bg-slate-950/80 dark:text-white"
-                  data-testid="run-provider-diagnostics"
-                  onClick={onRunDiagnostics}
-                  type="button"
-                >
-                  {diagnosticsLoading ? 'Đang kiểm tra...' : 'Kiểm tra'}
-                </Button>
-              </div>
-
-              {diagnosticsError ? (
-                <div className="mt-3 rounded-[16px] border border-red-500/20 bg-red-500/6 px-3 py-3">
-                  <p className="text-sm leading-6 text-red-600 dark:text-red-300">{diagnosticsError}</p>
-                  {diagnosticsMeta ? (
-                    <p className="mt-2 text-[11px] uppercase tracking-[0.14em] text-red-500/85 dark:text-red-300/80">
-                      {diagnosticsMeta}
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
-
-              {diagnostics ? (
-                <div className="mt-4 space-y-3">
-                  {diagnostics.providers.map((provider) => (
-                    <div
-                      className="rounded-[18px] border border-black/8 bg-white/78 px-3.5 py-3 dark:border-white/10 dark:bg-slate-950/55"
-                      key={provider.key}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold">{provider.key}</p>
-                          <p className="mt-1 text-[11px] uppercase tracking-[0.14em] text-ink/48 dark:text-slate-500">
-                            {provider.model}
-                          </p>
-                        </div>
-                        <span
-                          className={cn(
-                            'rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]',
-                            provider.status === 'ready'
-                              ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                              : provider.status === 'missing_key'
-                                ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                                : provider.status === 'error'
-                                  ? 'bg-red-500/10 text-red-700 dark:text-red-300'
-                                  : 'bg-slate-500/10 text-slate-700 dark:text-slate-300',
-                          )}
-                        >
-                          {provider.status === 'ready'
-                            ? 'ready'
-                            : provider.status === 'missing_key'
-                              ? 'missing key'
-                              : provider.status === 'error'
-                                ? 'error'
-                                : 'disabled'}
-                        </span>
-                      </div>
-                      <p className="mt-2 text-sm leading-6 text-ink/68 dark:text-slate-300">{provider.message}</p>
-                      <p className="mt-2 text-[11px] uppercase tracking-[0.14em] text-ink/45 dark:text-slate-500">
-                        {provider.latencyMs ? `Latency ${provider.latencyMs} ms` : 'Chưa có phản hồi mẫu'}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="mt-5">
-              <label
-                className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink/55 dark:text-slate-400"
-                htmlFor="settings-session-title"
-              >
-                Tên cuộc trò chuyện
-              </label>
-              {currentSession ? (
-                <div className="mt-2 flex gap-2">
+          <section className="mt-4 workspace-panel-subtle px-4 py-4">
+            <p className="section-kicker">Phiên hiện tại</p>
+            {currentSession ? (
+              <>
+                <div className="mt-3 flex gap-2">
                   <input
-                    className="focus-ring h-11 flex-1 rounded-[18px] border border-black/8 bg-white/75 px-4 text-sm outline-none dark:border-white/10 dark:bg-slate-900/55 dark:text-slate-100"
+                    className="focus-ring h-11 flex-1 rounded-[18px] border border-black/[0.08] bg-white/84 px-4 text-sm outline-none dark:border-white/10 dark:bg-slate-900/55 dark:text-slate-100"
                     id="settings-session-title"
                     onChange={(event) => onDraftTitleChange(event.target.value)}
                     placeholder="Đặt tên gợi nhớ cho phiên học"
                     value={draftTitle}
                   />
                   <Button
-                    className="h-11 gap-2 bg-white/80 px-4 text-ink dark:bg-slate-900/70 dark:text-white"
                     disabled={!canSaveTitle}
+                    leading={<Save className="h-4 w-4" />}
                     onClick={onSaveTitle}
                     type="button"
+                    variant="secondary"
                   >
-                    <Save className="h-4 w-4" />
                     Lưu
                   </Button>
                 </div>
-              ) : (
-                <p className="mt-2 text-sm leading-6 text-ink/60 dark:text-slate-400">
-                  Chọn một cuộc trò chuyện ở sidebar để đổi tên hoặc tùy chỉnh provider cho phiên đó.
-                </p>
-              )}
-            </div>
 
-            <div className="mt-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink/55 dark:text-slate-400">
-                Provider trả lời
+                <div className="mt-4">
+                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-ink/44 dark:text-slate-500">
+                    Provider trả lời
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {providerOptions.map((provider) => (
+                      <button
+                        className={cn(
+                          'focus-ring rounded-full border px-3.5 py-2 text-xs font-semibold transition',
+                          provider === activeProvider
+                            ? 'border-transparent bg-ink text-white dark:bg-white dark:text-ink'
+                            : 'border-black/[0.08] bg-white/84 text-ink/72 dark:border-white/10 dark:bg-slate-900/55 dark:text-slate-300',
+                        )}
+                        disabled={!currentSession}
+                        data-testid={`provider-option-${provider}`}
+                        key={provider}
+                        onClick={() => onProviderChange(provider)}
+                        type="button"
+                      >
+                        {provider}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-sm leading-6 text-ink/58 dark:text-slate-400">
+                    {providerDescriptions[activeProvider]}
+                  </p>
+                </div>
+              </>
+            ) : (
+              <p className="mt-3 text-sm leading-6 text-ink/60 dark:text-slate-400">
+                Chọn một cuộc trò chuyện ở sidebar để đổi tên hoặc tuỳ chỉnh provider cho phiên đó.
               </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {providerOptions.map((provider) => (
-                  <button
-                    className={cn(
-                      'focus-ring rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition',
-                      provider === activeProvider
-                        ? 'border-transparent bg-ink text-white dark:bg-white dark:text-ink'
-                        : 'border-black/10 bg-white/60 text-ink/72 dark:border-white/10 dark:bg-slate-900/50 dark:text-slate-300',
-                    )}
-                    disabled={!currentSession}
-                    data-testid={`provider-option-${provider}`}
-                    key={provider}
-                    onClick={() => onProviderChange(provider)}
-                    type="button"
-                  >
-                    {provider}
-                  </button>
-                ))}
+            )}
+          </section>
+
+          {usage ? (
+            <section className="mt-4 workspace-panel-subtle px-4 py-4">
+              <p className="section-kicker">Usage phiên hiện tại</p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-[18px] border border-black/[0.06] px-3 py-3 dark:border-white/10">
+                  <p className="text-xs uppercase tracking-[0.12em] text-ink/45 dark:text-slate-500">Requests</p>
+                  <p className="mt-1 text-lg font-semibold">{usage.summary.requests}</p>
+                </div>
+                <div className="rounded-[18px] border border-black/[0.06] px-3 py-3 dark:border-white/10">
+                  <p className="text-xs uppercase tracking-[0.12em] text-ink/45 dark:text-slate-500">Tokens</p>
+                  <p className="mt-1 text-lg font-semibold">{usage.summary.tokens}</p>
+                </div>
+                <div className="rounded-[18px] border border-black/[0.06] px-3 py-3 dark:border-white/10">
+                  <p className="text-xs uppercase tracking-[0.12em] text-ink/45 dark:text-slate-500">Fallbacks</p>
+                  <p className="mt-1 text-lg font-semibold">{usage.summary.fallbacks}</p>
+                </div>
+                <div className="rounded-[18px] border border-black/[0.06] px-3 py-3 dark:border-white/10">
+                  <p className="text-xs uppercase tracking-[0.12em] text-ink/45 dark:text-slate-500">Estimated cost</p>
+                  <p className="mt-1 text-lg font-semibold">${usage.summary.cost.toFixed(4)}</p>
+                </div>
               </div>
+            </section>
+          ) : null}
 
-              <p className="mt-3 text-xs leading-6 text-ink/55 dark:text-slate-400">
-                {providerDescriptions[activeProvider]}
-              </p>
-
-              {!hasExternalProviders ? (
-                <div className="mt-3 rounded-[22px] border border-amber-500/20 bg-amber-500/8 px-4 py-4 text-sm leading-6 text-amber-700 dark:text-amber-300">
-                  <p className="font-medium">Đang dùng local fallback</p>
-                  <p className="mt-2">
-                    Thêm <code className="rounded bg-black/5 px-1.5 py-0.5 text-[12px] dark:bg-white/10">GEMINI_API_KEY</code> hoặc{' '}
-                    <code className="rounded bg-black/5 px-1.5 py-0.5 text-[12px] dark:bg-white/10">OPENAI_API_KEY</code> vào{' '}
-                    <code className="rounded bg-black/5 px-1.5 py-0.5 text-[12px] dark:bg-white/10">apps/api/.env</code> để dùng provider thật.
-                  </p>
-                  <p className="mt-2 text-xs leading-5 text-amber-700/80 dark:text-amber-200/80">
-                    Bạn vẫn có thể đổi provider ưu tiên cho phiên này ngay từ bây giờ. Cài đặt đó sẽ được áp dụng tự động khi provider thật sẵn sàng.
-                  </p>
-                </div>
-              ) : null}
-            </div>
-
-            <div className="mt-5 grid gap-2">
-              <button
-                className="focus-ring flex items-center justify-between rounded-[20px] border border-black/8 bg-white/70 px-4 py-3 text-left transition hover:border-black/12 dark:border-white/10 dark:bg-slate-900/55"
-                onClick={onToggleTheme}
-                type="button"
-              >
-                <div>
-                  <p className="text-sm font-semibold">Giao diện</p>
-                  <p className="mt-1 text-xs leading-5 text-ink/58 dark:text-slate-400">
-                    Đổi giữa chế độ sáng và tối.
-                  </p>
-                </div>
-                <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/8 dark:border-white/10">
-                  {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-                </span>
-              </button>
-
-              <button
-                className="focus-ring flex items-center justify-between rounded-[20px] border border-black/8 bg-white/70 px-4 py-3 text-left transition hover:border-black/12 dark:border-white/10 dark:bg-slate-900/55"
-                onClick={onLogout}
-                type="button"
-              >
-                <div>
-                  <p className="text-sm font-semibold">Thoát workspace</p>
-                  <p className="mt-1 text-xs leading-5 text-ink/58 dark:text-slate-400">
-                    Xóa phiên đăng nhập trên thiết bị hiện tại.
-                  </p>
-                </div>
-                <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/8 dark:border-white/10">
-                  <LogOut className="h-4 w-4" />
-                </span>
-              </button>
+          <section className="mt-4 workspace-panel-subtle px-4 py-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="section-kicker">Diagnostics</p>
+                <p className="mt-2 text-sm leading-6 text-ink/60 dark:text-slate-400">
+                  Kiểm tra readiness, độ trễ và sự cố gần đây của từng provider.
+                </p>
+              </div>
+              <Button onClick={onRunDiagnostics} size="sm" type="button" variant="secondary">
+                {diagnosticsLoading ? 'Đang kiểm tra...' : 'Kiểm tra'}
+              </Button>
             </div>
           </section>
 
-          <section className="mt-5 min-h-0">
-            <div className="mb-4 flex items-start gap-3">
-              <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/8 bg-white/75 dark:border-white/10 dark:bg-slate-900/55">
-                <SlidersHorizontal className="h-4 w-4" />
-              </span>
+          <section className="mt-4">
+            <ProviderDiagnosticsPanel
+              diagnostics={diagnostics}
+              errorMessage={diagnosticsError}
+              incidents={providerIncidents}
+              loading={diagnosticsLoading}
+              metrics={providerMetrics}
+            />
+          </section>
+
+          <section className="mt-4 grid gap-2">
+            <button
+              className="focus-ring flex items-center justify-between rounded-[20px] border border-black/[0.08] bg-white/84 px-4 py-3 text-left transition hover:border-black/[0.12] dark:border-white/10 dark:bg-slate-900/55"
+              onClick={onToggleTheme}
+              type="button"
+            >
               <div>
-                <p className="font-display text-xl font-semibold tracking-[-0.03em]">Tài liệu gợi ý</p>
-                <p className="mt-1 text-sm leading-6 text-ink/65 dark:text-slate-300">
-                  Tìm theo từ khóa hoặc dựa trên ngữ cảnh của phiên học hiện tại.
+                <p className="text-sm font-semibold">Giao diện</p>
+                <p className="mt-1 text-xs leading-5 text-ink/56 dark:text-slate-400">Đổi giữa chế độ sáng và tối.</p>
+              </div>
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/[0.08] dark:border-white/10">
+                {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+              </span>
+            </button>
+
+            <button
+              className="focus-ring flex items-center justify-between rounded-[20px] border border-black/[0.08] bg-white/84 px-4 py-3 text-left transition hover:border-black/[0.12] dark:border-white/10 dark:bg-slate-900/55"
+              onClick={onLogout}
+              type="button"
+            >
+              <div>
+                <p className="text-sm font-semibold">Thoát workspace</p>
+                <p className="mt-1 text-xs leading-5 text-ink/56 dark:text-slate-400">
+                  Xóa phiên đăng nhập trên thiết bị hiện tại.
                 </p>
               </div>
-            </div>
-
-            <div className="min-h-0">
-              <MaterialsPanel
-                errorMessage={errorMessage}
-                errorMeta={errorMeta}
-                isLoading={isLoading}
-                materials={materials}
-                onRetry={onRetry}
-                onSearchChange={onSearchChange}
-                searchValue={searchValue}
-              />
-            </div>
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/[0.08] dark:border-white/10">
+                <LogOut className="h-4 w-4" />
+              </span>
+            </button>
           </section>
         </div>
       </aside>

@@ -117,15 +117,17 @@ export class MaterialsRepository {
   }
 
   async listRecentSessionMessages(sessionId: string) {
-    return prisma.message.findMany({
+    const messages = await prisma.message.findMany({
       where: {
         sessionId,
         status: 'sent',
       },
       orderBy: {
-        createdAt: 'asc',
+        createdAt: 'desc',
       },
       take: 12,
     });
+
+    return messages.reverse();
   }
 }

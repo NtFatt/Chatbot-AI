@@ -17,11 +17,18 @@ export interface AIProviderResponse {
   text: string;
   finishReason: 'stop' | 'length' | 'error' | 'unknown';
   latencyMs: number;
+  providerRequestId?: string;
   usage?: {
     inputTokens?: number;
     outputTokens?: number;
     totalTokens?: number;
   };
+}
+
+export interface AIProviderErrorDescriptor {
+  code: string;
+  message: string;
+  retryable: boolean;
 }
 
 export interface AIProvider {

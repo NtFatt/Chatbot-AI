@@ -60,7 +60,9 @@ export class MaterialsService {
     );
   }
 
-  async recommend(params: MaterialSearchParams & { sessionId?: string; userId: string }) {
+  private async rankRecommendations(
+    params: MaterialSearchParams & { sessionId?: string; userId: string },
+  ) {
     const keywordsFromQuery = extractKeywords([params.q, params.subject, params.topic].filter(Boolean).join(' '));
 
     const session = params.sessionId
@@ -131,7 +133,21 @@ export class MaterialsService {
       .sort((left: MaterialRecommendation, right: MaterialRecommendation) => right.score - left.score)
       .slice(0, params.limit ?? 8);
 
-    if (session) {
+    return {
+      ranked,
+      session,
+    };
+  }
+
+  async recommend(
+    params: MaterialSearchParams & { sessionId?: string; userId: string },
+    options?: {
+      persistHistory?: boolean;
+    },
+  ) {
+    const { ranked, session } = await this.rankRecommendations(params);
+
+    if ((options?.persistHistory ?? true) && session) {
       await this.materialsRepository.createRecommendationHistory(
         session.id,
         ranked.map((item: MaterialRecommendation) => ({
