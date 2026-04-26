@@ -5,15 +5,33 @@ import { prisma } from '../../config/prisma';
 export class ChatRepository {
   async listSessions(userId: string) {
     const sessions = await prisma.chatSession.findMany({
-      where: { userId },
-      orderBy: { updatedAt: 'desc' },
+      where: { userId, isArchived: false },
+      orderBy: [{ isPinned: 'desc' }, { pinnedAt: 'desc' }, { updatedAt: 'desc' }],
       include: {
         messages: {
           orderBy: { createdAt: 'desc' },
           take: 1,
         },
         _count: {
-          select: { messages: true },
+          select: { messages: true, studyArtifacts: true },
+        },
+      },
+    });
+
+    return sessions;
+  }
+
+  async listArchivedSessions(userId: string) {
+    const sessions = await prisma.chatSession.findMany({
+      where: { userId, isArchived: true },
+      orderBy: [{ isPinned: 'desc' }, { pinnedAt: 'desc' }, { archivedAt: 'desc' }],
+      include: {
+        messages: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+        _count: {
+          select: { messages: true, studyArtifacts: true },
         },
       },
     });
@@ -33,6 +51,8 @@ export class ChatRepository {
     title?: string;
     providerPreference?: ProviderKey;
     contextSummary?: string | null;
+    isPinned?: boolean;
+    isArchived?: boolean;
   }) {
     await this.assertSessionOwner(input.sessionId, input.userId);
     return prisma.chatSession.update({
@@ -41,6 +61,14 @@ export class ChatRepository {
         title: input.title,
         providerPreference: input.providerPreference,
         contextSummary: input.contextSummary,
+        ...(input.isPinned !== undefined && {
+          isPinned: input.isPinned,
+          pinnedAt: input.isPinned ? new Date() : null,
+        }),
+        ...(input.isArchived !== undefined && {
+          isArchived: input.isArchived,
+          archivedAt: input.isArchived ? new Date() : null,
+        }),
       },
     });
   }

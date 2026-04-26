@@ -1,11 +1,12 @@
 import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { ChatMessage, ChatSessionSummary, ProviderKey } from '@chatbot-ai/shared';
+import type { ArtifactGenerateType, ArtifactType, ChatMessage, ChatSessionSummary, ProviderKey, StudyArtifact } from '@chatbot-ai/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Library, Menu, Settings2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
+import { ArtifactDrawer } from '../../components/layout/ArtifactDrawer';
 import { ChatComposer } from '../../components/chat/ChatComposer';
 import { ChatMessageBubble } from '../../components/chat/ChatMessageBubble';
 import { ThreadWelcome } from '../../components/chat/ThreadWelcome';
@@ -17,10 +18,12 @@ import { useChatSocket } from '../../hooks/use-chat-socket';
 import {
   createSession,
   deleteSession,
+  fetchArchivedSessions,
   fetchMessages,
   fetchSessions,
   updateSession,
 } from '../../services/chat-service';
+import { generateArtifact, fetchSessionArtifacts, deleteArtifact } from '../../services/artifacts-service';
 import { logout } from '../../services/auth-service';
 import { recommendMaterials } from '../../services/materials-service';
 import {
@@ -73,6 +76,8 @@ export const DashboardPage = () => {
   const setSelectedSessionId = useUiStore((state) => state.setSelectedSessionId);
   const sidebarOpen = useUiStore((state) => state.sidebarOpen);
   const setSidebarOpen = useUiStore((state) => state.setSidebarOpen);
+  const sidebarArchivedOpen = useUiStore((state) => state.sidebarArchivedOpen);
+  const setSidebarArchivedOpen = useUiStore((state) => state.setSidebarArchivedOpen);
 
   const [resourceSearch, setResourceSearch] = useState('');
   const deferredSearch = useDeferredValue(resourceSearch);
@@ -81,11 +86,18 @@ export const DashboardPage = () => {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [contextDrawerOpen, setContextDrawerOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [artifactsDrawerOpen, setArtifactsDrawerOpen] = useState(false);
+  const [artifactFilter, setArtifactFilter] = useState<ArtifactType | 'all'>('all');
+  const [generatingArtifactType, setGeneratingArtifactType] = useState<ArtifactGenerateType | null>(null);
   const messagesViewportRef = useRef<HTMLDivElement | null>(null);
 
   const sessionsQuery = useQuery({
     queryKey: queryKeys.sessions,
     queryFn: fetchSessions,
+  });
+  const archivedSessionsQuery = useQuery({
+    queryKey: queryKeys.archivedSessions,
+    queryFn: fetchArchivedSessions,
   });
   const providersQuery = useQuery({
     queryKey: queryKeys.providers,
@@ -136,8 +148,14 @@ export const DashboardPage = () => {
         limit: 6,
       }),
   });
+  const artifactsQuery = useQuery({
+    enabled: Boolean(selectedSessionId),
+    queryKey: selectedSessionId ? queryKeys.artifacts(selectedSessionId) : ['artifacts-disabled'],
+    queryFn: () => fetchSessionArtifacts(selectedSessionId!),
+  });
 
   const sessions = sessionsQuery.data?.items ?? [];
+  const archivedSessions = archivedSessionsQuery.data?.items ?? [];
   const currentSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
   const messages = useMemo(
     () => sortMessagesForRender(messagesQuery.data?.items ?? []),
@@ -202,11 +220,20 @@ export const DashboardPage = () => {
       input: {
         title?: string;
         providerPreference?: ProviderKey;
+        isPinned?: boolean;
+        isArchived?: boolean;
       };
     }) => updateSession(sessionId, input),
     onSuccess: (session) => {
       queryClient.setQueryData(
         queryKeys.sessions,
+        (previous: { items: ChatSessionSummary[]; total: number } | undefined) => ({
+          items: (previous?.items ?? []).map((item) => (item.id === session.id ? { ...item, ...session } : item)),
+          total: previous?.total ?? 0,
+        }),
+      );
+      queryClient.setQueryData(
+        queryKeys.archivedSessions,
         (previous: { items: ChatSessionSummary[]; total: number } | undefined) => ({
           items: (previous?.items ?? []).map((item) => (item.id === session.id ? { ...item, ...session } : item)),
           total: previous?.total ?? 0,
@@ -228,11 +255,125 @@ export const DashboardPage = () => {
           };
         },
       );
+      queryClient.setQueryData(
+        queryKeys.archivedSessions,
+        (previous: { items: ChatSessionSummary[]; total: number } | undefined) => {
+          const items = (previous?.items ?? []).filter((item) => item.id !== sessionId);
+          return {
+            items,
+            total: items.length,
+          };
+        },
+      );
 
       if (selectedSessionId === sessionId) {
         startTransition(() => {
           setSelectedSessionId(sessions.find((item) => item.id !== sessionId)?.id ?? null);
         });
+      }
+    },
+  });
+
+  const pinSessionMutation = useMutation({
+    mutationFn: ({ sessionId, isPinned }: { sessionId: string; isPinned: boolean }) =>
+      updateSession(sessionId, { isPinned }),
+    onSuccess: (updatedSession) => {
+      queryClient.setQueryData(
+        queryKeys.sessions,
+        (previous: { items: ChatSessionSummary[]; total: number } | undefined) => ({
+          items: (previous?.items ?? []).map((item) =>
+            item.id === updatedSession.id ? { ...item, ...updatedSession } : item,
+          ),
+          total: previous?.total ?? 0,
+        }),
+      );
+    },
+  });
+
+  const archiveSessionMutation = useMutation({
+    mutationFn: (sessionId: string) => updateSession(sessionId, { isArchived: true }),
+    onSuccess: (archivedSession) => {
+      queryClient.setQueryData(
+        queryKeys.sessions,
+        (previous: { items: ChatSessionSummary[]; total: number } | undefined) => {
+          const items = (previous?.items ?? []).filter((item) => item.id !== archivedSession.id);
+          return { items, total: items.length };
+        },
+      );
+      queryClient.setQueryData(
+        queryKeys.archivedSessions,
+        (previous: { items: ChatSessionSummary[]; total: number } | undefined) => ({
+          items: [{ ...archivedSession, isArchived: true }, ...(previous?.items ?? [])],
+          total: (previous?.items.length ?? 0) + 1,
+        }),
+      );
+      if (selectedSessionId === archivedSession.id) {
+        startTransition(() => {
+          setSelectedSessionId(sessions.find((item) => item.id !== archivedSession.id)?.id ?? null);
+        });
+      }
+    },
+  });
+
+  const unarchiveSessionMutation = useMutation({
+    mutationFn: (sessionId: string) => updateSession(sessionId, { isArchived: false }),
+    onSuccess: (restoredSession) => {
+      queryClient.setQueryData(
+        queryKeys.archivedSessions,
+        (previous: { items: ChatSessionSummary[]; total: number } | undefined) => {
+          const items = (previous?.items ?? []).filter((item) => item.id !== restoredSession.id);
+          return { items, total: items.length };
+        },
+      );
+      queryClient.setQueryData(
+        queryKeys.sessions,
+        (previous: { items: ChatSessionSummary[]; total: number } | undefined) => ({
+          items: [restoredSession, ...(previous?.items ?? [])],
+          total: (previous?.items.length ?? 0) + 1,
+        }),
+      );
+    },
+  });
+
+  const generateArtifactMutation = useMutation({
+    mutationFn: ({
+      type,
+      sourceContent,
+    }: {
+      type: ArtifactGenerateType;
+      sourceContent: string;
+    }) =>
+      generateArtifact({
+        sessionId: selectedSessionId ?? undefined,
+        type,
+        sourceContent,
+      }),
+    onSuccess: (artifact) => {
+      if (selectedSessionId) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.artifacts(selectedSessionId) });
+      }
+      setGeneratingArtifactType(null);
+      toast.success(`Đã tạo ${artifact.type.replace('_', ' ')} thành công`);
+    },
+    onError: () => {
+      setGeneratingArtifactType(null);
+    },
+  });
+
+  const deleteArtifactMutation = useMutation({
+    mutationFn: deleteArtifact,
+    onSuccess: (_response, artifactId) => {
+      if (selectedSessionId) {
+        queryClient.setQueryData(
+          queryKeys.artifacts(selectedSessionId),
+          (previous: { items: StudyArtifact[]; total: number } | undefined) =>
+            previous
+              ? {
+                  items: previous.items.filter((a) => a.id !== artifactId),
+                  total: previous.total - 1,
+                }
+              : previous,
+        );
       }
     },
   });
@@ -345,6 +486,11 @@ export const DashboardPage = () => {
     setComposerDraft((current) => appendPrompt(current, value));
   };
 
+  const handleGenerateArtifact = async (type: ArtifactGenerateType, sourceContent: string) => {
+    setGeneratingArtifactType(type);
+    await generateArtifactMutation.mutateAsync({ type, sourceContent });
+  };
+
   return (
     <div className="workspace-shell">
       <div className="workspace-grid lg:grid-cols-[220px_minmax(0,1fr)]">
@@ -352,15 +498,24 @@ export const DashboardPage = () => {
           <div className="h-full rounded-2xl border border-black/[0.05] bg-white/80 backdrop-blur-xl dark:border-white/10 dark:bg-[rgba(12,18,30,0.88)]">
             <SessionSidebar
               activeSessionId={selectedSessionId}
+              archivedSessions={archivedSessions}
               isCollapsed={sidebarCollapsed}
+              onArchive={(sessionId) => archiveSessionMutation.mutate(sessionId)}
               onCreate={() => createSessionMutation.mutate(activeProvider)}
               onDelete={(sessionId) => deleteSessionMutation.mutate(sessionId)}
               onOpenSettings={() => setSettingsOpen(true)}
+              onPin={(sessionId, isPinned) => pinSessionMutation.mutate({ sessionId, isPinned })}
+              onRename={(sessionId, title) =>
+                updateSessionMutation.mutate({ sessionId, input: { title } })
+              }
               onSelect={(sessionId) => {
                 startTransition(() => setSelectedSessionId(sessionId));
               }}
+              onToggleArchived={() => setSidebarArchivedOpen(!sidebarArchivedOpen)}
               onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+              onUnarchive={(sessionId) => unarchiveSessionMutation.mutate(sessionId)}
               sessions={sessions}
+              showArchived={sidebarArchivedOpen}
             />
           </div>
         </div>
@@ -382,6 +537,17 @@ export const DashboardPage = () => {
               onClick={() => setContextDrawerOpen(true)}
               size="sm"
               tooltip="Learning context"
+            />
+            <IconButton
+              badge={artifactsQuery.data?.items.length}
+              icon={
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
+                </svg>
+              }
+              onClick={() => setArtifactsDrawerOpen(true)}
+              size="sm"
+              tooltip="Study artifacts"
             />
             <IconButton
               icon={<Settings2 className="h-4 w-4" />}
@@ -457,6 +623,8 @@ export const DashboardPage = () => {
                       <ChatMessageBubble
                         key={message.clientMessageId}
                         message={message}
+                        generatingType={generatingArtifactType}
+                        onGenerateArtifact={handleGenerateArtifact}
                         onPrefill={handlePromptSelect}
                         onRetry={handleRetry}
                       />
@@ -492,17 +660,26 @@ export const DashboardPage = () => {
             <div className="h-full rounded-2xl border border-black/[0.05] bg-white/95 backdrop-blur-xl dark:border-white/10 dark:bg-[rgba(12,18,30,0.96)]">
               <SessionSidebar
                 activeSessionId={selectedSessionId}
+                archivedSessions={archivedSessions}
+                onArchive={(sessionId) => archiveSessionMutation.mutate(sessionId)}
                 onCreate={() => createSessionMutation.mutate(activeProvider)}
                 onDelete={(sessionId) => deleteSessionMutation.mutate(sessionId)}
                 onOpenSettings={() => {
                   setSidebarOpen(false);
                   setSettingsOpen(true);
                 }}
+                onPin={(sessionId, isPinned) => pinSessionMutation.mutate({ sessionId, isPinned })}
+                onRename={(sessionId, title) =>
+                  updateSessionMutation.mutate({ sessionId, input: { title } })
+                }
                 onSelect={(sessionId) => {
                   startTransition(() => setSelectedSessionId(sessionId));
                   setSidebarOpen(false);
                 }}
+                onToggleArchived={() => setSidebarArchivedOpen(!sidebarArchivedOpen)}
+                onUnarchive={(sessionId) => unarchiveSessionMutation.mutate(sessionId)}
                 sessions={sessions}
+                showArchived={sidebarArchivedOpen}
               />
             </div>
           </div>
@@ -526,6 +703,17 @@ export const DashboardPage = () => {
         onRetryMaterials={() => recommendationsQuery.refetch()}
         onSearchChange={setResourceSearch}
         searchValue={resourceSearch}
+      />
+
+      <ArtifactDrawer
+        activeFilter={artifactFilter}
+        artifacts={artifactsQuery.data?.items ?? []}
+        isLoading={artifactsQuery.isLoading}
+        isOpen={artifactsDrawerOpen}
+        onClose={() => setArtifactsDrawerOpen(false)}
+        onDelete={(id) => deleteArtifactMutation.mutate(id)}
+        onFilterChange={setArtifactFilter}
+        sessionCount={1}
       />
 
       <WorkspaceSettingsSheet

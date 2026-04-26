@@ -54,6 +54,13 @@ enum AIFinishReason {
   unknown
 }
 
+enum ArtifactType {
+  summary
+  flashcard_set
+  quiz_set
+  note
+}
+
 model User {
   id                String        @id @default(uuid())
   displayName       String
@@ -64,6 +71,7 @@ model User {
   authSessions      AuthSession[]
   chatSessions      ChatSession[]
   aiUsageLogs       AiUsageLog[]
+  studyArtifacts    StudyArtifact[]
 
   @@map("users")
 }
@@ -102,14 +110,20 @@ model ChatSession {
   title              String
   providerPreference ProviderKey           @default(GEMINI)
   contextSummary     String?
+  isPinned           Boolean              @default(false)
+  pinnedAt           DateTime?
+  isArchived         Boolean              @default(false)
+  archivedAt         DateTime?
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
   user               User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages           Message[]
   recommendations    RecommendationHistory[]
   aiUsageLogs        AiUsageLog[]
+  studyArtifacts     StudyArtifact[]
 
-  @@index([userId, updatedAt(sort: Desc)])
+  @@index([userId, isPinned(sort: Desc), updatedAt(sort: Desc)])
+  @@index([userId, isArchived, updatedAt(sort: Desc)])
   @@map("chat_sessions")
 }
 
@@ -136,6 +150,7 @@ model Message {
   updatedAt       DateTime      @updatedAt
   session         ChatSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   aiUsageLogs     AiUsageLog[]
+  studyArtifacts  StudyArtifact[]
 
   @@index([sessionId, createdAt])
   @@index([sessionId, updatedAt])
@@ -250,4 +265,26 @@ model ProviderIncident {
   @@index([provider, createdAt])
   @@index([errorCode, createdAt])
   @@map("provider_incidents")
+}
+
+model StudyArtifact {
+  id          String       @id @default(uuid())
+  userId      String
+  sessionId   String?
+  messageId   String?
+  type        ArtifactType
+  title       String
+  content     Json
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session     ChatSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  message     Message?     @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, type])
+  @@index([sessionId])
+  @@index([messageId])
+  @@map("study_artifacts")
 }

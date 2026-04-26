@@ -19,11 +19,18 @@ export const updateSession = (
   input: {
     title?: string;
     providerPreference?: ProviderKey;
+    isPinned?: boolean;
+    isArchived?: boolean;
   },
 ) =>
   apiRequest<ChatSessionSummary>(`/api/chat/sessions/${sessionId}`, {
     method: 'PATCH',
     body: JSON.stringify(input),
+  });
+
+export const fetchArchivedSessions = () =>
+  apiRequest<PaginatedResponse<ChatSessionSummary>>('/api/chat/sessions/archived', {
+    method: 'GET',
   });
 
 export const deleteSession = (sessionId: string) =>
