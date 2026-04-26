@@ -22,16 +22,21 @@ const toJsonValue = (value: RetrievalSnapshot | null | undefined): Prisma.InputJ
   value ? (JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue) : undefined;
 
 const mapSession = (
-  session: Awaited<ReturnType<ChatRepository['listSessions']>>[number],
+  session: Awaited<ReturnType<ChatRepository['listSessions']>>[number] | Awaited<ReturnType<ChatRepository['listArchivedSessions']>>[number],
 ): ChatSessionSummary => ({
   id: session.id,
   title: session.title,
   providerPreference: session.providerPreference,
   contextSummary: session.contextSummary,
+  isPinned: session.isPinned,
+  pinnedAt: session.pinnedAt ? toIso(session.pinnedAt) : null,
+  isArchived: session.isArchived,
+  archivedAt: session.archivedAt ? toIso(session.archivedAt) : null,
   createdAt: toIso(session.createdAt),
   updatedAt: toIso(session.updatedAt),
   lastMessagePreview: session.messages[0]?.content ?? null,
   messageCount: session._count.messages,
+  artifactCount: session._count.studyArtifacts,
 });
 
 const mapMessage = (
@@ -109,6 +114,11 @@ export class ChatService {
     return sessions.map(mapSession);
   }
 
+  async listArchivedSessions(userId: string) {
+    const sessions = await this.chatRepository.listArchivedSessions(userId);
+    return sessions.map(mapSession);
+  }
+
   async createSession(
     userId: string,
     input: {
@@ -127,10 +137,15 @@ export class ChatService {
       title: session.title,
       providerPreference: session.providerPreference,
       contextSummary: session.contextSummary,
+      isPinned: session.isPinned,
+      pinnedAt: null,
+      isArchived: session.isArchived,
+      archivedAt: null,
       createdAt: toIso(session.createdAt),
       updatedAt: toIso(session.updatedAt),
       lastMessagePreview: null,
       messageCount: 0,
+      artifactCount: 0,
     } satisfies ChatSessionSummary;
   }
 
@@ -140,6 +155,8 @@ export class ChatService {
     input: {
       title?: string;
       providerPreference?: ProviderKey;
+      isPinned?: boolean;
+      isArchived?: boolean;
     },
   ) {
     await this.ensureSession(sessionId, userId);
@@ -154,10 +171,15 @@ export class ChatService {
       title: session.title,
       providerPreference: session.providerPreference,
       contextSummary: session.contextSummary,
+      isPinned: session.isPinned,
+      pinnedAt: session.pinnedAt ? toIso(session.pinnedAt) : null,
+      isArchived: session.isArchived,
+      archivedAt: session.archivedAt ? toIso(session.archivedAt) : null,
       createdAt: toIso(session.createdAt),
       updatedAt: toIso(session.updatedAt),
       lastMessagePreview: null,
       messageCount: 0,
+      artifactCount: 0,
     } satisfies ChatSessionSummary;
   }
 
@@ -285,10 +307,15 @@ export class ChatService {
         title: updatedSession.title,
         providerPreference: updatedSession.providerPreference,
         contextSummary: updatedSession.contextSummary,
+        isPinned: updatedSession.isPinned,
+        pinnedAt: updatedSession.pinnedAt ? toIso(updatedSession.pinnedAt) : null,
+        isArchived: updatedSession.isArchived,
+        archivedAt: updatedSession.archivedAt ? toIso(updatedSession.archivedAt) : null,
         createdAt: toIso(updatedSession.createdAt),
         updatedAt: toIso(updatedSession.updatedAt),
         lastMessagePreview: userMessage.content,
         messageCount: 0,
+        artifactCount: 0,
       });
     }
 
@@ -347,10 +374,15 @@ export class ChatService {
         title: summarizedSession.title,
         providerPreference: summarizedSession.providerPreference,
         contextSummary: summarizedSession.contextSummary,
+        isPinned: summarizedSession.isPinned,
+        pinnedAt: summarizedSession.pinnedAt ? toIso(summarizedSession.pinnedAt) : null,
+        isArchived: summarizedSession.isArchived,
+        archivedAt: summarizedSession.archivedAt ? toIso(summarizedSession.archivedAt) : null,
         createdAt: toIso(summarizedSession.createdAt),
         updatedAt: toIso(summarizedSession.updatedAt),
         lastMessagePreview: aiResult.contentMarkdown,
         messageCount: 0,
+        artifactCount: 0,
       };
       callbacks?.onSessionUpdated?.(sessionSummary);
 

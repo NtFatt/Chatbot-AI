@@ -11,6 +11,8 @@ export const createChatSessionSchema = z.object({
 export const updateChatSessionSchema = z.object({
   title: z.string().trim().min(1).max(MAX_SESSION_TITLE_CHARS).optional(),
   providerPreference: z.enum(PROVIDER_KEYS).optional(),
+  isPinned: z.boolean().optional(),
+  isArchived: z.boolean().optional(),
 });
 
 export const askChatSchema = z.object({

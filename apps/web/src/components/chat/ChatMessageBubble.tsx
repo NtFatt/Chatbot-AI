@@ -1,4 +1,4 @@
-import { AlertTriangle, Copy, ListChecks, RotateCcw } from 'lucide-react';
+import { AlertTriangle, Copy, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 
 import type { ChatMessage } from '@chatbot-ai/shared';
@@ -21,10 +21,17 @@ export const ChatMessageBubble = ({
   message,
   onPrefill,
   onRetry,
+  onGenerateArtifact,
+  generatingType,
 }: {
   message: ChatMessage;
   onPrefill?: (value: string) => void;
   onRetry?: (message: ChatMessage) => void;
+  onGenerateArtifact?: (
+    type: 'summary' | 'flashcard_set' | 'quiz_set' | 'note',
+    sourceContent: string,
+  ) => Promise<void>;
+  generatingType?: 'summary' | 'flashcard_set' | 'quiz_set' | 'note' | null;
 }) => {
   const isAssistant = message.senderType === 'assistant';
   const isStreaming = message.status === 'streaming';
@@ -142,42 +149,54 @@ export const ChatMessageBubble = ({
           </details>
         )}
 
-        {onPrefill && (
-          <details className="mt-2">
-            <summary className="focus-ring cursor-pointer text-xs text-ink/35 transition hover:text-ink/55 dark:text-slate-600 dark:hover:text-slate-400">
-              Continue learning
-            </summary>
-            <div className="mt-2 flex flex-wrap gap-1.5">
+        {(onPrefill || onGenerateArtifact) && message.senderType === 'assistant' && message.status === 'sent' && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {onGenerateArtifact && message.content.length > 50 && (
+              <>
+                <button
+                  className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-ocean/20 bg-ocean/8 px-2.5 py-1.5 text-xs font-medium text-ocean transition hover:bg-ocean/12 dark:border-cyan/20 dark:bg-cyan/10 dark:text-cyan disabled:opacity-50"
+                  onClick={() => onGenerateArtifact('summary', message.content)}
+                  disabled={generatingType !== null}
+                  type="button"
+                >
+                  Tóm tắt
+                </button>
+                <button
+                  className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-purple-500/20 bg-purple-500/8 px-2.5 py-1.5 text-xs font-medium text-purple-600 transition hover:bg-purple-500/12 dark:border-purple-400/20 dark:bg-purple-400/10 dark:text-purple-400 disabled:opacity-50"
+                  onClick={() => onGenerateArtifact('flashcard_set', message.content)}
+                  disabled={generatingType !== null}
+                  type="button"
+                >
+                  Flashcard
+                </button>
+                <button
+                  className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/8 px-2.5 py-1.5 text-xs font-medium text-amber-600 transition hover:bg-amber-500/12 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-400 disabled:opacity-50"
+                  onClick={() => onGenerateArtifact('quiz_set', message.content)}
+                  disabled={generatingType !== null}
+                  type="button"
+                >
+                  Quiz
+                </button>
+                <button
+                  className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/8 px-2.5 py-1.5 text-xs font-medium text-emerald-600 transition hover:bg-emerald-500/12 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-400 disabled:opacity-50"
+                  onClick={() => onGenerateArtifact('note', message.content)}
+                  disabled={generatingType !== null}
+                  type="button"
+                >
+                  Ghi chú
+                </button>
+              </>
+            )}
+            {onPrefill && (
               <button
                 className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-black/[0.05] bg-white/60 px-2.5 py-1.5 text-xs font-medium text-ink/70 transition hover:bg-white/80 hover:text-ink dark:border-white/10 dark:bg-slate-900/50 dark:text-slate-300 dark:hover:bg-slate-900/70 dark:hover:text-white"
-                onClick={() => onPrefill('Tóm tắt thành 5 ý chính ngắn gọn.')}
-                type="button"
-              >
-                <ListChecks className="h-3 w-3" />
-                Summarize
-              </button>
-              <button
-                className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-black/[0.05] bg-white/60 px-2.5 py-1.5 text-xs font-medium text-ink/70 transition hover:bg-white/80 hover:text-ink dark:border-white/10 dark:bg-slate-900/50 dark:text-slate-300 dark:hover:bg-slate-900/70 dark:hover:text-white"
-                onClick={() => onPrefill('Tạo 5 câu hỏi ôn tập từ nội dung trên.')}
-                type="button"
-              >
-                <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
-                </svg>
-                Quiz me
-              </button>
-              <button
-                className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-ocean/20 bg-ocean/8 px-2.5 py-1.5 text-xs font-medium text-ocean transition hover:bg-ocean/12 dark:border-cyan/20 dark:bg-cyan/10 dark:text-cyan"
                 onClick={() => onPrefill('Gợi ý 3 câu hỏi follow-up để học sâu hơn.')}
                 type="button"
               >
-                <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
-                </svg>
                 Ask follow-up
               </button>
-            </div>
-          </details>
+            )}
+          </div>
         )}
       </article>
     </div>

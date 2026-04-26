@@ -7,10 +7,15 @@ export interface ChatSessionSummary {
   title: string;
   providerPreference: ProviderKey;
   contextSummary: string | null;
+  isPinned: boolean;
+  pinnedAt: string | null;
+  isArchived: boolean;
+  archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
   lastMessagePreview: string | null;
   messageCount: number;
+  artifactCount: number;
 }
 
 export interface ChatMessage {

@@ -10,6 +10,13 @@ export const createChatController = (chatService: ChatService) => ({
       total: sessions.length,
     });
   }),
+  listArchivedSessions: asyncHandler(async (req, res) => {
+    const sessions = await chatService.listArchivedSessions(req.auth!.userId);
+    return success(req, res, {
+      items: sessions,
+      total: sessions.length,
+    });
+  }),
   createSession: asyncHandler(async (req, res) => {
     const session = await chatService.createSession(
       req.auth!.userId,

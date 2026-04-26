@@ -21,6 +21,9 @@ import { ProvidersService } from './modules/providers/providers.service';
 import { createProvidersRoutes } from './modules/providers/providers.routes';
 import { createUsageRoutes } from './modules/usage/usage.routes';
 import { UsageService } from './modules/usage/usage.service';
+import { ArtifactsRepository } from './modules/artifacts/artifacts.repository';
+import { ArtifactsService } from './modules/artifacts/artifacts.service';
+import { createArtifactsRoutes } from './modules/artifacts/artifacts.routes';
 import { GeminiAdapter } from './integrations/ai/adapters/gemini.adapter';
 import { OpenAIAdapter } from './integrations/ai/adapters/openai.adapter';
 import { AIOrchestratorService } from './integrations/ai/ai-orchestrator.service';
@@ -58,6 +61,14 @@ export const createApp = () => {
     aiOrchestrator,
     retrievalService,
     chatGuardService,
+  );
+  const artifactsRepository = new ArtifactsRepository();
+  const artifactsService = new ArtifactsService(
+    artifactsRepository,
+    providersService,
+    providerClients,
+    authService,
+    chatRepository,
   );
 
   app.disable('x-powered-by');
@@ -130,6 +141,7 @@ export const createApp = () => {
   app.use('/api/chat/ask', askLimiter);
   app.use('/api/chat', chatLimiter, createChatRoutes(chatService));
   app.use('/api/materials', materialsLimiter, createMaterialsRoutes(materialsService));
+  app.use('/api/artifacts', createArtifactsRoutes(artifactsService));
   app.use('/api/providers', createProvidersRoutes(providersService, providerClients));
   app.use('/api', createUsageRoutes(usageService));
 

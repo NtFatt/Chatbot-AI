@@ -18,6 +18,7 @@ export const createChatRoutes = (chatService: ChatService) => {
 
   router.use(authMiddleware);
   router.get('/sessions', controller.listSessions);
+  router.get('/sessions/archived', controller.listArchivedSessions);
   router.post('/sessions', validate(createChatSessionSchema, 'body'), controller.createSession);
   router.patch(
     '/sessions/:id',
