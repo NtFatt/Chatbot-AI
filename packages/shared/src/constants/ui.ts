@@ -16,6 +16,9 @@ export type MessageStatus = (typeof MESSAGE_STATUSES)[number];
 export const AI_FINISH_REASONS = ['stop', 'length', 'error', 'unknown'] as const;
 export type AIFinishReason = (typeof AI_FINISH_REASONS)[number];
 
+export const CONFIDENCE_LEVELS = ['low', 'medium', 'high'] as const;
+export type ConfidenceLevel = (typeof CONFIDENCE_LEVELS)[number];
+
 export const MAX_MESSAGE_CHARS = 4000;
 export const MAX_DISPLAY_NAME_CHARS = 80;
 export const MAX_SESSION_TITLE_CHARS = 120;

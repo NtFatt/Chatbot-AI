@@ -1,5 +1,12 @@
 import type { ArtifactGenerateType } from '../types/artifacts';
 
+const qualityHint = `
+Them truong "qualityScore" trong ket qua.
+- qualityScore la so tu 0 den 1.
+- Diem chi cao khi artifact ro rang, dung chu de, co cau truc, va co gia tri hoc tap truc tiep.
+- Neu noi dung nguon mo ho, hay giam diem.
+`.trim();
+
 const buildFlashcardPrompt = (content: string, language: string): string => `
 Ban la mot tro ly hoc tap AI. Tu noi dung ngu canh sau, hay tao 5 flashcard hoi-dap de nguoi hoc co the tu kiem tra kien thuc.
 
@@ -103,10 +110,34 @@ NGU CANH:
 ${content}
 `.trim();
 
+const buildStructuredArtifactPrompt = (type: ArtifactGenerateType, content: string, language: string) => `
+Ban la tro ly hoc tap AI chuyen tao artifact hoc tap co cau truc.
+Hay tao artifact loai "${type}" dua tren ngu canh sau.
+
+Yeu cau chung:
+- uu tien do ro rang, tinh hoc tap, tinh chinh xac
+- tranh van phong qua dai dong
+- duoc phep bo qua thong tin yeu neu khong can thiet
+- output phai phu hop schema duoc cung cap boi he thong
+- ${qualityHint.replace(/\n/g, ' ')}
+- Neu ngu canh bang tieng Viet, artifact uu tien tieng Viet
+- Neu ngu canh bang tieng Anh, artifact uu tien tieng Anh
+- Ngon ngu uu tien hien tai: ${language}
+
+NGU CANH:
+${content}
+`.trim();
+
 export const buildArtifactSystemPrompt = (): string => `
 Ban la tro ly hoc tap AI chuyen tao noi dung hoc thuat co cau truc.
 Ban chi tra ve JSON thuan, khong co explanation, khong co markdown code blocks, khong co text khac ngoai JSON.
 Ranh gioi JSON phai chinh xac, co the parse bang JSON.parse() ma khong co loi.
+`.trim();
+
+export const buildStructuredArtifactSystemPrompt = (): string => `
+Ban la tro ly hoc tap AI chuyen tao artifact hoc tap dang JSON schema.
+He thong se validate output cua ban mot cach nghiem ngat.
+Chi dien du lieu hop schema, ngan gon, chinh xac, huu ich cho viec hoc.
 `.trim();
 
 export const buildArtifactUserPrompt = (
@@ -125,3 +156,9 @@ export const buildArtifactUserPrompt = (
       return buildNotePrompt(content, language);
   }
 };
+
+export const buildStructuredArtifactUserPrompt = (
+  type: ArtifactGenerateType,
+  content: string,
+  language: string,
+) => buildStructuredArtifactPrompt(type, content, language);

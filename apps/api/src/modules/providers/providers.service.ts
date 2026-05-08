@@ -63,11 +63,12 @@ export class ProvidersService {
       const envConfig = providerKeyToEnv(key);
       const dbConfig = byKey.get(key);
       const health = this.providerHealthService.snapshot(key);
+      const envApiKey = envConfig.apiKey.trim();
 
       return {
         key,
         enabled: dbConfig?.enabled ?? envConfig.enabled ?? true,
-        configured: envConfig.apiKey.trim().length > 0,
+        configured: envApiKey.length > 0,
         isPrimary: dbConfig?.isPrimary ?? env.AI_PRIMARY_PROVIDER === key,
         model: dbConfig?.model ?? envConfig.model ?? PROVIDER_DEFAULT_MODELS[key],
         timeoutMs: dbConfig?.timeoutMs ?? envConfig.timeoutMs ?? 25_000,

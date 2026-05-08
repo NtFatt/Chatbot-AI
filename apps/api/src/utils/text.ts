@@ -42,7 +42,19 @@ export const sanitizeInput = (value: string) => value.replace(/\u0000/g, '').tri
 export const truncateText = (value: string, maxLength: number) =>
   value.length > maxLength ? `${value.slice(0, maxLength - 1).trim()}…` : value;
 
-export const buildSessionTitle = (message: string) => truncateText(message.replace(/\s+/g, ' '), 64);
+export const buildSessionTitle = (message: string) => {
+  // Strip markdown code fences and inline code
+  let cleaned = message.replace(/```[\s\S]*?```/g, '').replace(/`[^`]*`/g, '');
+  // Strip common question/task prefixes in English and Vietnamese
+  cleaned = cleaned.replace(
+    /^(explain|giải thích|what is|what's|how to|how do|why\b|show me|write a|tạo|viết|tìm hiểu|bài học|lesson|làm sao|cho tôi|hãy|mình)\s*[:-]?\s*/i,
+    '',
+  );
+  // Strip leading whitespace after stripping
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+  if (!cleaned) return truncateText(message.replace(/\s+/g, ' '), 64);
+  return truncateText(cleaned, 64);
+};
 
 export const buildContextSummary = (messages: string[]) => {
   const combined = messages

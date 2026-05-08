@@ -21,16 +21,20 @@ import { ProvidersService } from './modules/providers/providers.service';
 import { createProvidersRoutes } from './modules/providers/providers.routes';
 import { createUsageRoutes } from './modules/usage/usage.routes';
 import { UsageService } from './modules/usage/usage.service';
+import { createInsightsRoutes } from './modules/insights/insights.routes';
+import { InsightsService } from './modules/insights/insights.service';
 import { ArtifactsRepository } from './modules/artifacts/artifacts.repository';
 import { ArtifactsService } from './modules/artifacts/artifacts.service';
-import { createArtifactsRoutes } from './modules/artifacts/artifacts.routes';
+import { createArtifactsRoutes, createPublicArtifactsRoutes } from './modules/artifacts/artifacts.routes';
 import { GeminiAdapter } from './integrations/ai/adapters/gemini.adapter';
 import { OpenAIAdapter } from './integrations/ai/adapters/openai.adapter';
 import { AIOrchestratorService } from './integrations/ai/ai-orchestrator.service';
 import { ProviderHealthService } from './integrations/ai/provider-health.service';
+import { StructuredOutputService } from './integrations/ai/structured-output.service';
 import { RetrievalService } from './integrations/retrieval/retrieval.service';
 import { success } from './utils/api-response';
 import { asyncHandler } from './utils/async-handler';
+import { SessionIntelligenceService } from './modules/chat/session-intelligence.service';
 
 export const createApp = () => {
   const app = express();
@@ -44,6 +48,7 @@ export const createApp = () => {
   const chatGuardService = new ChatGuardService();
   const providerHealthService = new ProviderHealthService();
   const usageService = new UsageService();
+  const insightsService = new InsightsService();
   const providersService = new ProvidersService(providerHealthService);
   const providerClients = {
     GEMINI: env.GEMINI_API_KEY ? new GeminiAdapter(env.GEMINI_API_KEY) : null,
@@ -55,18 +60,26 @@ export const createApp = () => {
     providerHealthService,
     usageService,
   );
+  const structuredOutputService = new StructuredOutputService(
+    providersService,
+    providerClients,
+    providerHealthService,
+    usageService,
+  );
+  const sessionIntelligenceService = new SessionIntelligenceService(structuredOutputService);
   const chatService = new ChatService(
     chatRepository,
     authService,
     aiOrchestrator,
     retrievalService,
     chatGuardService,
+    sessionIntelligenceService,
   );
   const artifactsRepository = new ArtifactsRepository();
   const artifactsService = new ArtifactsService(
     artifactsRepository,
     providersService,
-    providerClients,
+    structuredOutputService,
     authService,
     chatRepository,
   );
@@ -141,9 +154,11 @@ export const createApp = () => {
   app.use('/api/chat/ask', askLimiter);
   app.use('/api/chat', chatLimiter, createChatRoutes(chatService));
   app.use('/api/materials', materialsLimiter, createMaterialsRoutes(materialsService));
+  app.use('/api/public/artifacts', createPublicArtifactsRoutes(artifactsService));
   app.use('/api/artifacts', createArtifactsRoutes(artifactsService));
   app.use('/api/providers', createProvidersRoutes(providersService, providerClients));
   app.use('/api', createUsageRoutes(usageService));
+  app.use('/api/insights', createInsightsRoutes(insightsService));
 
   app.use(notFoundMiddleware);
   app.use(errorMiddleware);
@@ -154,6 +169,7 @@ export const createApp = () => {
       chatService,
       providersService,
       usageService,
+      insightsService,
     },
   };
 };

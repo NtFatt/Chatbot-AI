@@ -35,6 +35,51 @@ export const createArtifactsController = (artifactsService: ArtifactsService) =>
     });
   }),
 
+  search: asyncHandler(async (req, res) => {
+    const query = (req.validated?.query as typeof req.query) ?? req.query;
+    const results = await artifactsService.searchArtifacts(req.auth!.userId, {
+      q: String(query.q ?? '').trim(),
+      limit: typeof query.limit === 'string' ? Number(query.limit) : 10,
+      type: typeof query.type === 'string' ? (query.type as ArtifactGenerateType) : undefined,
+    });
+    return success(req, res, { items: results, total: results.length });
+  }),
+
+  listFavorites: asyncHandler(async (req, res) => {
+    const artifacts = await artifactsService.listFavorites(req.auth!.userId);
+    return success(req, res, { items: artifacts, total: artifacts.length });
+  }),
+
+  toggleFavorite: asyncHandler(async (req, res) => {
+    const params = (req.validated?.params as typeof req.params) ?? req.params;
+    const artifact = await artifactsService.toggleFavorite(req.auth!.userId, String(params.id));
+    return success(req, res, artifact);
+  }),
+
+  exportMarkdown: asyncHandler(async (req, res) => {
+    const params = (req.validated?.params as typeof req.params) ?? req.params;
+    const payload = await artifactsService.exportMarkdown(req.auth!.userId, String(params.id));
+    return success(req, res, payload);
+  }),
+
+  createShareLink: asyncHandler(async (req, res) => {
+    const params = (req.validated?.params as typeof req.params) ?? req.params;
+    const payload = await artifactsService.createShareLink(req.auth!.userId, String(params.id));
+    return success(req, res, payload, 201);
+  }),
+
+  revokeShareLink: asyncHandler(async (req, res) => {
+    const params = (req.validated?.params as typeof req.params) ?? req.params;
+    const payload = await artifactsService.revokeShareLink(req.auth!.userId, String(params.id));
+    return success(req, res, payload);
+  }),
+
+  getPublicArtifact: asyncHandler(async (req, res) => {
+    const params = (req.validated?.params as typeof req.params) ?? req.params;
+    const artifact = await artifactsService.getPublicArtifactByToken(String(params.shareToken));
+    return success(req, res, artifact);
+  }),
+
   remove: asyncHandler(async (req, res) => {
     const params = (req.validated?.params as typeof req.params) ?? req.params;
     await artifactsService.delete(req.auth!.userId, String(params.id));

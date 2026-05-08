@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: Lint, Typecheck, Test, Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.29.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint (shared)
+        run: pnpm --filter @chatbot-ai/shared lint
+
+      - name: Lint (api)
+        run: pnpm --filter @chatbot-ai/api lint
+
+      - name: Lint (web)
+        run: pnpm --filter @chatbot-ai/web lint
+
+      - name: Typecheck (shared)
+        run: pnpm --filter @chatbot-ai/shared typecheck
+
+      - name: Typecheck (api)
+        run: pnpm --filter @chatbot-ai/api typecheck
+
+      - name: Typecheck (web)
+        run: pnpm --filter @chatbot-ai/web typecheck
+
+      - name: Test (api)
+        run: pnpm --filter @chatbot-ai/api test
+
+      - name: Test (web)
+        run: pnpm --filter @chatbot-ai/web test
+
+      - name: Build (shared)
+        run: pnpm --filter @chatbot-ai/shared build
+
+      - name: Build (api)
+        run: pnpm --filter @chatbot-ai/api build
+
+      - name: Build (web)
+        run: pnpm --filter @chatbot-ai/web build

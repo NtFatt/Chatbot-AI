@@ -28,10 +28,14 @@ export interface StudyArtifact {
   id: string;
   userId: string;
   sessionId: string | null;
+  sessionTitle?: string | null;
   messageId: string | null;
   type: ArtifactType;
   title: string;
   content: ArtifactContent;
+  isFavorited: boolean;
+  isShared?: boolean;
+  qualityScore: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -47,4 +51,42 @@ export interface GenerateArtifactParams {
 
 export interface GenerateArtifactResult {
   artifact: StudyArtifact;
+}
+
+export interface ArtifactSearchResult {
+  id: string;
+  type: ArtifactType;
+  title: string;
+  sessionId: string | null;
+  sessionTitle: string | null;
+  preview: string;
+  isFavorited: boolean;
+  createdAt: string;
+}
+
+export interface ArtifactExportPayload {
+  artifactId: string;
+  filename: string;
+  mimeType: 'text/markdown';
+  markdown: string;
+}
+
+export interface ArtifactSharePayload {
+  artifactId: string;
+  isShared: true;
+  shareToken: string;
+}
+
+export interface ArtifactShareRevokePayload {
+  artifactId: string;
+  isShared: false;
+}
+
+export interface PublicStudyArtifact {
+  id: string;
+  type: ArtifactType;
+  title: string;
+  content: ArtifactContent;
+  qualityScore: number | null;
+  createdAt: string;
 }

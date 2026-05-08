@@ -1,21 +1,14 @@
-import { AlertTriangle, Copy, RotateCcw } from 'lucide-react';
+import { AlertTriangle, BookOpenText, Copy, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 
 import type { ChatMessage } from '@chatbot-ai/shared';
 
-import { cn } from '../../utils/cn';
 import { formatRelativeTime } from '../../utils/format';
 import { MarkdownContent } from './MarkdownContent';
 import { MessageSources } from './MessageSources';
 import { ProviderBadge } from './ProviderBadge';
 import { UsageMeta } from './UsageMeta';
-
-const statusLabelMap = {
-  streaming: 'Generating...',
-  sending: 'Sending...',
-  needs_sync: 'Syncing...',
-  failed: 'Failed',
-} as const;
+import { ScoreBadge } from '../ui/ScoreBadge';
 
 export const ChatMessageBubble = ({
   message,
@@ -30,12 +23,25 @@ export const ChatMessageBubble = ({
   onGenerateArtifact?: (
     type: 'summary' | 'flashcard_set' | 'quiz_set' | 'note',
     sourceContent: string,
+    messageId?: string,
   ) => Promise<void>;
   generatingType?: 'summary' | 'flashcard_set' | 'quiz_set' | 'note' | null;
 }) => {
   const isAssistant = message.senderType === 'assistant';
   const isStreaming = message.status === 'streaming';
   const hasSources = Boolean(message.retrievalSnapshot?.materials.length);
+  const topicLabel = message.topicLabel ?? message.subjectLabel;
+  const levelLabel =
+    message.levelLabel === 'beginner'
+      ? 'Cơ bản'
+      : message.levelLabel === 'intermediate'
+        ? 'Trung bình'
+        : message.levelLabel === 'advanced'
+          ? 'Nâng cao'
+          : null;
+  const fallbackMessages = Array.from(
+    new Set(message.fallbackInfo?.notices.map((notice) => notice.message).filter(Boolean) ?? []),
+  );
 
   const copyContent = async () => {
     try {
@@ -71,7 +77,7 @@ export const ChatMessageBubble = ({
       >
         <div className="mb-1 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-ink/40 dark:text-slate-500">
+            <span className="text-xs font-medium text-ink/52 dark:text-slate-400">
               {formatRelativeTime(message.createdAt)}
             </span>
 
@@ -95,6 +101,7 @@ export const ChatMessageBubble = ({
             {onRetry && (
               <button
                 className="focus-ring flex h-7 w-7 items-center justify-center rounded-lg text-ink/40 transition hover:bg-black/[0.04] hover:text-ink dark:text-slate-500 dark:hover:bg-white/[0.06] dark:hover:text-white"
+                data-testid={`retry-button-${message.clientMessageId}`}
                 onClick={() => onRetry(message)}
                 title="Retry"
                 type="button"
@@ -105,8 +112,27 @@ export const ChatMessageBubble = ({
           </div>
         </div>
 
-        <div className="rounded-2xl rounded-tl-md border border-black/[0.04] bg-white/70 px-4 py-3 backdrop-blur-sm dark:border-white/8 dark:bg-slate-900/60 dark:text-slate-100">
+        <div className="rounded-2xl rounded-tl-md border border-black/[0.06] bg-white/82 px-4 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:border-white/8 dark:bg-slate-900/62 dark:text-slate-100">
           <MarkdownContent content={message.content || 'Analyzing and generating response...'} />
+
+          {fallbackMessages.length > 0 ? (
+            <div
+              className="mt-3 rounded-xl border border-amber-500/22 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:border-amber-300/18 dark:bg-amber-400/10 dark:text-amber-100"
+              data-testid={`fallback-warning-${message.clientMessageId}`}
+            >
+              <div className="mb-1 flex items-center gap-1.5 font-semibold">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                <span>Fallback status</span>
+              </div>
+              <div className="space-y-1">
+                {fallbackMessages.map((warning) => (
+                  <p key={warning} className="leading-relaxed">
+                    {warning}
+                  </p>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           {message.status === 'failed' && onRetry ? (
             <div className="mt-3 flex items-center gap-2">
@@ -114,6 +140,7 @@ export const ChatMessageBubble = ({
               <span className="text-sm text-red-600 dark:text-red-400">Generation failed</span>
               <button
                 className="focus-ring inline-flex items-center gap-1 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-600 transition hover:bg-red-500/15 dark:text-red-400"
+                data-testid={`retry-inline-button-${message.clientMessageId}`}
                 onClick={() => onRetry(message)}
                 type="button"
               >
@@ -124,10 +151,26 @@ export const ChatMessageBubble = ({
           ) : null}
         </div>
 
-        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink/35 dark:text-slate-600">
+        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-ink/45 dark:text-slate-500">
           {message.provider ? (
             <ProviderBadge fallbackUsed={message.fallbackUsed} model={message.model} provider={message.provider} />
           ) : null}
+
+          <ScoreBadge kind="confidence" score={message.confidenceScore} />
+
+          {topicLabel ? (
+            <span className="inline-flex items-center gap-1 rounded-full border border-black/[0.08] bg-white/82 px-2.5 py-0.5 text-[11px] font-medium text-ink/64 shadow-[0_3px_10px_rgba(15,23,42,0.03)] dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300">
+              {topicLabel}
+              {levelLabel ? <span className="text-ink/35 dark:text-slate-500">· {levelLabel}</span> : null}
+            </span>
+          ) : null}
+
+          {hasSources && (
+            <span className="inline-flex items-center gap-1 rounded-full border border-ocean/20 bg-ocean/10 px-2.5 py-0.5 text-[11px] font-semibold text-ocean dark:border-cyan/20 dark:bg-cyan/12 dark:text-cyan">
+              <BookOpenText className="h-3 w-3" />
+              {message.retrievalSnapshot!.materials.length} nguồn
+            </span>
+          )}
 
           {(message.latencyMs || message.totalTokens) && (
             <UsageMeta
@@ -139,14 +182,9 @@ export const ChatMessageBubble = ({
         </div>
 
         {hasSources && (
-          <details className="mt-2">
-            <summary className="focus-ring cursor-pointer text-xs text-ink/40 transition hover:text-ink/60 dark:text-slate-500 dark:hover:text-slate-400">
-              {message.retrievalSnapshot!.materials.length} source{message.retrievalSnapshot!.materials.length !== 1 ? 's' : ''} used
-            </summary>
-            <div className="mt-2">
-              <MessageSources retrievalSnapshot={message.retrievalSnapshot!} />
-            </div>
-          </details>
+          <div className="mt-2">
+            <MessageSources retrievalSnapshot={message.retrievalSnapshot!} />
+          </div>
         )}
 
         {(onPrefill || onGenerateArtifact) && message.senderType === 'assistant' && message.status === 'sent' && (
@@ -154,32 +192,32 @@ export const ChatMessageBubble = ({
             {onGenerateArtifact && message.content.length > 50 && (
               <>
                 <button
-                  className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-ocean/20 bg-ocean/8 px-2.5 py-1.5 text-xs font-medium text-ocean transition hover:bg-ocean/12 dark:border-cyan/20 dark:bg-cyan/10 dark:text-cyan disabled:opacity-50"
-                  onClick={() => onGenerateArtifact('summary', message.content)}
+                  className="focus-ring inline-flex items-center gap-1.5 rounded-xl border border-ocean/20 bg-ocean/10 px-3 py-1.5 text-xs font-semibold text-ocean transition hover:bg-ocean/14 active:bg-ocean/18 dark:border-cyan/20 dark:bg-cyan/12 dark:text-cyan disabled:opacity-50"
+                  onClick={() => onGenerateArtifact('summary', message.content, message.id)}
                   disabled={generatingType !== null}
                   type="button"
                 >
                   Tóm tắt
                 </button>
                 <button
-                  className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-purple-500/20 bg-purple-500/8 px-2.5 py-1.5 text-xs font-medium text-purple-600 transition hover:bg-purple-500/12 dark:border-purple-400/20 dark:bg-purple-400/10 dark:text-purple-400 disabled:opacity-50"
-                  onClick={() => onGenerateArtifact('flashcard_set', message.content)}
+                  className="focus-ring inline-flex items-center gap-1.5 rounded-xl border border-purple-500/20 bg-purple-500/10 px-3 py-1.5 text-xs font-semibold text-purple-700 transition hover:bg-purple-500/14 active:bg-purple-500/18 dark:border-purple-400/20 dark:bg-purple-400/12 dark:text-purple-300 disabled:opacity-50"
+                  onClick={() => onGenerateArtifact('flashcard_set', message.content, message.id)}
                   disabled={generatingType !== null}
                   type="button"
                 >
                   Flashcard
                 </button>
                 <button
-                  className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/8 px-2.5 py-1.5 text-xs font-medium text-amber-600 transition hover:bg-amber-500/12 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-400 disabled:opacity-50"
-                  onClick={() => onGenerateArtifact('quiz_set', message.content)}
+                  className="focus-ring inline-flex items-center gap-1.5 rounded-xl border border-amber-500/22 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-500/14 active:bg-amber-500/18 dark:border-amber-400/20 dark:bg-amber-400/12 dark:text-amber-300 disabled:opacity-50"
+                  onClick={() => onGenerateArtifact('quiz_set', message.content, message.id)}
                   disabled={generatingType !== null}
                   type="button"
                 >
                   Quiz
                 </button>
                 <button
-                  className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/8 px-2.5 py-1.5 text-xs font-medium text-emerald-600 transition hover:bg-emerald-500/12 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-400 disabled:opacity-50"
-                  onClick={() => onGenerateArtifact('note', message.content)}
+                  className="focus-ring inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/22 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-500/14 active:bg-emerald-500/18 dark:border-emerald-400/20 dark:bg-emerald-400/12 dark:text-emerald-300 disabled:opacity-50"
+                  onClick={() => onGenerateArtifact('note', message.content, message.id)}
                   disabled={generatingType !== null}
                   type="button"
                 >
@@ -189,7 +227,7 @@ export const ChatMessageBubble = ({
             )}
             {onPrefill && (
               <button
-                className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-black/[0.05] bg-white/60 px-2.5 py-1.5 text-xs font-medium text-ink/70 transition hover:bg-white/80 hover:text-ink dark:border-white/10 dark:bg-slate-900/50 dark:text-slate-300 dark:hover:bg-slate-900/70 dark:hover:text-white"
+                className="focus-ring inline-flex items-center gap-1.5 rounded-xl border border-black/[0.08] bg-white/84 px-3 py-1.5 text-xs font-semibold text-ink/72 transition hover:border-black/[0.12] hover:bg-white hover:text-ink active:bg-black/[0.02] dark:border-white/10 dark:bg-slate-900/56 dark:text-slate-300 dark:hover:bg-slate-900/74 dark:hover:text-white"
                 onClick={() => onPrefill('Gợi ý 3 câu hỏi follow-up để học sâu hơn.')}
                 type="button"
               >

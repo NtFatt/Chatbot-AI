@@ -8,6 +8,7 @@ const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
 type RequestOptions = RequestInit & {
   skipAuth?: boolean;
   retryOnAuth?: boolean;
+  params?: Record<string, string | number | boolean | undefined>;
 };
 
 const parseJson = async <T>(response: Response) => {
@@ -85,10 +86,21 @@ export const apiRequest = async <T>(path: string, options: RequestOptions = {}) 
     headers.set('Content-Type', 'application/json');
   }
 
+  const searchParams = new URLSearchParams();
+  if (options.params) {
+    for (const [key, value] of Object.entries(options.params)) {
+      if (value !== undefined) {
+        searchParams.set(key, String(value));
+      }
+    }
+  }
+  const queryString = searchParams.toString();
+  const requestPath = queryString ? `${path}?${queryString}` : path;
+
   let response: Response;
 
   try {
-    response = await fetch(`${API_URL}${path}`, {
+    response = await fetch(`${API_URL}${requestPath}`, {
       ...options,
       headers,
     });
@@ -107,7 +119,7 @@ export const apiRequest = async <T>(path: string, options: RequestOptions = {}) 
 
       let retried: Response;
       try {
-        retried = await fetch(`${API_URL}${path}`, {
+        retried = await fetch(`${API_URL}${requestPath}`, {
           ...options,
           headers,
         });

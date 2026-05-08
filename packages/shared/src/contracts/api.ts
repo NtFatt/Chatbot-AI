@@ -24,3 +24,10 @@ export interface PaginatedResponse<T> {
   items: T[];
   total: number;
 }
+
+export interface CursorPaginatedResponse<T> {
+  items: T[];
+  nextCursor: string | null;
+  totalCount: number;
+  hasMore: boolean;
+}

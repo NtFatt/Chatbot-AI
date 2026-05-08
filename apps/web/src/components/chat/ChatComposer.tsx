@@ -80,18 +80,19 @@ export const ChatComposer = ({
     <div className="relative flex items-end gap-2 px-4 pb-4">
       <div
         className={cn(
-          'group relative flex-1 rounded-xl border transition-colors',
+          'group relative flex-1 rounded-2xl border shadow-[0_8px_20px_rgba(15,23,42,0.04)] transition-colors',
           value.trim()
-            ? 'border-ocean/30 bg-white/90 shadow-sm dark:border-cyan/30 dark:bg-slate-900/80'
-            : 'border-black/[0.06] bg-white/80 focus-within:border-ocean/30 dark:border-white/10 dark:bg-slate-900/70 dark:focus-within:border-cyan/30',
+            ? 'border-ocean/22 bg-white/94 dark:border-cyan/28 dark:bg-slate-900/82'
+            : 'border-black/[0.08] bg-white/88 focus-within:border-ocean/30 dark:border-white/10 dark:bg-slate-900/72 dark:focus-within:border-cyan/30',
           disabled && 'opacity-50',
         )}
       >
         <textarea
+          data-testid="chat-composer-input"
           ref={textareaRef}
           aria-label="Type your question"
           className={cn(
-            'composer-scrollbar w-full resize-none bg-transparent px-4 py-3 text-sm leading-relaxed text-ink outline-none placeholder:text-ink/35 dark:text-slate-100 dark:placeholder:text-slate-500',
+            'composer-scrollbar w-full resize-none bg-transparent px-4 py-3 text-sm leading-relaxed text-ink outline-none placeholder:text-ink/45 dark:text-slate-100 dark:placeholder:text-slate-500',
             'disabled:cursor-not-allowed',
           )}
           disabled={disabled || submitting}
@@ -131,7 +132,7 @@ export const ChatComposer = ({
 
           <div
             className={cn(
-              'absolute bottom-full left-0 mb-2 flex gap-1 rounded-xl border border-black/[0.06] bg-white/95 p-1.5 shadow-lg backdrop-blur-xl transition-all dark:border-white/10 dark:bg-slate-900/95',
+              'absolute bottom-full left-0 mb-2 flex gap-1.5 rounded-2xl border border-black/[0.08] bg-white/96 p-2 shadow-[0_18px_46px_rgba(15,23,42,0.14)] backdrop-blur-xl transition-all dark:border-white/10 dark:bg-slate-900/95',
               isAttachOpen ? 'opacity-100 translate-y-0' : 'opacity-0 pointer-events-none translate-y-2',
             )}
             onClick={(e) => e.stopPropagation()}
@@ -186,6 +187,7 @@ export const ChatComposer = ({
               ? 'bg-ocean text-white hover:bg-ocean/90 dark:bg-cyan dark:text-ink dark:hover:bg-cyan/90'
               : 'bg-black/[0.06] text-ink/40 dark:bg-white/10 dark:text-slate-500',
           )}
+          data-testid="chat-send-button"
           icon={<ArrowUp className="h-4 w-4" />}
           onClick={() => void submit()}
           size="sm"

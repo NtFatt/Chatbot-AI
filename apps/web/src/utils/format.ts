@@ -27,7 +27,17 @@ export const stripMarkdownPreview = (value?: string | null) =>
     .replace(/\s+/g, ' ')
     .trim();
 
-export const groupSessionsByRecency = (sessions: ChatSessionSummary[]) => {
+export interface SessionGroup {
+  label: string;
+  items: ChatSessionSummary[];
+}
+
+export interface GroupedSessions {
+  pinned?: SessionGroup;
+  groups: SessionGroup[];
+}
+
+export const groupSessionsByRecency = (sessions: ChatSessionSummary[]): GroupedSessions => {
   const now = new Date();
   const buckets = [
     {
@@ -82,7 +92,10 @@ export const groupSessionsByRecency = (sessions: ChatSessionSummary[]) => {
     });
   }
 
-  return groups;
+  return {
+    pinned: pinned.length > 0 ? { label: 'Đã ghim', items: pinned } : undefined,
+    groups,
+  };
 };
 
 export const groupArchivedSessionsByRecency = (sessions: ChatSessionSummary[]) => {

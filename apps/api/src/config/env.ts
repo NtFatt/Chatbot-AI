@@ -1,4 +1,6 @@
-import 'dotenv/config';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   DEFAULT_PROVIDER,
@@ -7,7 +9,29 @@ import {
   PROVIDER_KEYS,
   type ProviderKey,
 } from '@chatbot-ai/shared';
+import { parse } from 'dotenv';
 import { z } from 'zod';
+
+const envDir = path.dirname(fileURLToPath(import.meta.url));
+const apiEnvPath = path.resolve(envDir, '../../.env');
+const rootEnvPath = path.resolve(envDir, '../../../.env');
+
+const loadEnvFile = (targetPath: string) => {
+  if (!fs.existsSync(targetPath)) {
+    return;
+  }
+
+  const parsedFile = parse(fs.readFileSync(targetPath));
+  Object.entries(parsedFile).forEach(([key, value]) => {
+    if (process.env[key] == null || process.env[key] === '') {
+      process.env[key] = value;
+    }
+  });
+};
+
+// Precedence: shell env > apps/api/.env > repo-root .env fallback.
+loadEnvFile(apiEnvPath);
+loadEnvFile(rootEnvPath);
 
 const booleanish = z
   .string()
@@ -53,6 +77,18 @@ const parsed = envSchema.safeParse(process.env);
 if (!parsed.success) {
   console.error('Invalid environment variables', parsed.error.flatten().fieldErrors);
   throw new Error('Invalid environment variables');
+}
+
+const isProduction = parsed.data.NODE_ENV === 'production';
+const isJwtPlaceholder =
+  parsed.data.JWT_SECRET === 'replace-with-a-long-random-secret-at-least-32-characters';
+
+if (isProduction && isJwtPlaceholder) {
+  console.error(
+    'FATAL: JWT_SECRET is set to the placeholder value. ' +
+    'Generate a strong secret (at least 32 random characters) and set it as JWT_SECRET in your environment.',
+  );
+  throw new Error('JWT_SECRET must be set to a non-placeholder value in production');
 }
 
 const normalizeOptionalSecret = (value?: string) => {

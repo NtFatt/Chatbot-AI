@@ -8,6 +8,14 @@ import { cn } from '../../utils/cn';
 import { ArtifactPreview } from '../chat/ArtifactPreview';
 import { IconButton } from '../ui/IconButton';
 
+export type ArtifactBrowseMode = 'session' | 'favorites' | 'all';
+
+const browseModes: Array<{ value: ArtifactBrowseMode; label: string }> = [
+  { value: 'session', label: 'Current Session' },
+  { value: 'favorites', label: 'Favorites' },
+  { value: 'all', label: 'All Artifacts' },
+];
+
 const typeFilters: { value: ArtifactType | 'all'; label: string; icon: typeof BookOpen }[] = [
   { value: 'all', label: 'All', icon: BookOpen },
   { value: 'summary', label: 'Summary', icon: BookOpen },
@@ -19,23 +27,45 @@ const typeFilters: { value: ArtifactType | 'all'; label: string; icon: typeof Bo
 interface ArtifactDrawerProps {
   isOpen: boolean;
   onClose: () => void;
+  mode: ArtifactBrowseMode;
+  onModeChange: (mode: ArtifactBrowseMode) => void;
   artifacts: StudyArtifact[];
   isLoading: boolean;
+  errorMessage?: string | null;
   activeFilter: ArtifactType | 'all';
   onFilterChange: (filter: ArtifactType | 'all') => void;
   onDelete: (id: string) => void;
+  onExport?: (artifact: StudyArtifact) => void;
+  onShare?: (artifact: StudyArtifact) => void;
+  onRevokeShare?: (artifact: StudyArtifact) => void;
+  exportingArtifactId?: string | null;
+  sharingArtifactId?: string | null;
+  revokingArtifactId?: string | null;
   sessionCount: number;
+  onStartQuizReview?: (artifact: StudyArtifact) => void;
+  onToggleFavorite?: (id: string) => void;
 }
 
 export const ArtifactDrawer = ({
   isOpen,
   onClose,
+  mode,
+  onModeChange,
   artifacts,
   isLoading,
+  errorMessage,
   activeFilter,
   onFilterChange,
   onDelete,
+  onExport,
+  onShare,
+  onRevokeShare,
+  exportingArtifactId,
+  sharingArtifactId,
+  revokingArtifactId,
   sessionCount,
+  onStartQuizReview,
+  onToggleFavorite,
 }: ArtifactDrawerProps) => {
   const drawerRef = useRef<HTMLDivElement>(null);
 
@@ -65,6 +95,28 @@ export const ArtifactDrawer = ({
       ? artifacts
       : artifacts.filter((a) => a.type === activeFilter);
 
+  const modeLabel =
+    mode === 'session' ? 'current session artifacts' : mode === 'favorites' ? 'favorites' : 'all artifacts';
+  const subtitle =
+    mode === 'session'
+      ? `${artifacts.length} item${artifacts.length === 1 ? '' : 's'}`
+      : `${artifacts.length} item${artifacts.length === 1 ? '' : 's'}${sessionCount > 0 ? ` from ${sessionCount} session${sessionCount === 1 ? '' : 's'}` : ''}`;
+
+  const emptyState = {
+    session: {
+      title: 'No artifacts in this session yet',
+      body: 'Generate summaries, flashcards, or notes from responses in this thread.',
+    },
+    favorites: {
+      title: 'No favorites yet',
+      body: 'Favorite your best summaries, quizzes, or notes to revisit them across sessions.',
+    },
+    all: {
+      title: 'No saved artifacts yet',
+      body: 'Your generated summaries, notes, flashcards, and quizzes will appear here.',
+    },
+  } as const;
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -80,12 +132,12 @@ export const ArtifactDrawer = ({
           <motion.aside
             ref={drawerRef}
             animate={{ x: 0 }}
-            className="fixed bottom-0 right-0 top-0 z-50 flex w-[420px] max-w-[94vw] flex-col overflow-hidden rounded-l-2xl border-l border-black/[0.05] bg-[rgba(255,255,255,0.96)] shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-[rgba(12,18,30,0.96)]"
+            className="fixed bottom-0 right-0 top-0 z-50 flex w-[440px] max-w-[94vw] flex-col overflow-hidden rounded-l-[26px] border-l border-black/[0.08] bg-[rgba(250,252,255,0.98)] shadow-[0_26px_90px_rgba(15,23,42,0.16)] backdrop-blur-xl dark:border-white/10 dark:bg-[rgba(12,18,30,0.97)]"
             exit={{ x: '100%' }}
             initial={{ x: '100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
           >
-            <div className="flex items-center justify-between border-b border-black/[0.05] px-4 py-3 dark:border-white/10">
+            <div className="flex items-center justify-between border-b border-black/[0.06] px-5 py-4 dark:border-white/10">
               <div className="flex items-center gap-2">
                 <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-purple-500/10 text-purple-600 dark:bg-purple-500/15 dark:text-purple-400">
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -99,16 +151,36 @@ export const ArtifactDrawer = ({
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-ink dark:text-slate-100">Study Artifacts</p>
-                  <p className="text-xs text-ink/50 dark:text-slate-500">
-                    {artifacts.length} items {sessionCount > 0 ? `from ${sessionCount} session${sessionCount !== 1 ? 's' : ''}` : ''}
+                  <p className="text-xs leading-5 text-ink/62 dark:text-slate-400">
+                    {subtitle}
                   </p>
                 </div>
               </div>
               <IconButton icon={<X className="h-4 w-4" />} onClick={onClose} tooltip="Close" variant="ghost" />
             </div>
 
-            <div className="border-b border-black/[0.05] px-4 py-2 dark:border-white/10">
-              <div className="flex gap-1.5 overflow-x-auto">
+            <div className="space-y-3 border-b border-black/[0.06] px-5 py-3 dark:border-white/10">
+              <div className="flex gap-2 overflow-x-auto">
+                {browseModes.map((browseMode) => {
+                  const isActive = mode === browseMode.value;
+                  return (
+                    <button
+                      className={cn(
+                        'focus-ring inline-flex shrink-0 items-center rounded-xl border px-3 py-1.5 text-xs font-semibold transition',
+                        isActive
+                          ? 'border-ocean/18 bg-ocean/10 text-ocean dark:border-cyan/20 dark:bg-cyan/15 dark:text-cyan'
+                          : 'border-black/[0.08] bg-white/82 text-ink/62 hover:border-black/[0.12] hover:bg-white hover:text-ink dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-400 dark:hover:bg-white/[0.08] dark:hover:text-white',
+                      )}
+                      key={browseMode.value}
+                      onClick={() => onModeChange(browseMode.value)}
+                      type="button"
+                    >
+                      {browseMode.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex gap-2 overflow-x-auto">
                 {typeFilters.map((filter) => {
                   const FilterIcon = filter.icon;
                   const isActive = activeFilter === filter.value;
@@ -120,10 +192,10 @@ export const ArtifactDrawer = ({
                   return (
                     <button
                       className={cn(
-                        'focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition',
+                        'focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition',
                         isActive
-                          ? 'bg-ocean/12 text-ocean dark:bg-cyan/15 dark:text-cyan'
-                          : 'text-ink/50 hover:bg-black/[0.04] hover:text-ink dark:text-slate-500 dark:hover:bg-white/[0.06] dark:hover:text-white',
+                          ? 'border-ocean/18 bg-ocean/10 text-ocean dark:border-cyan/20 dark:bg-cyan/15 dark:text-cyan'
+                          : 'border-black/[0.08] bg-white/82 text-ink/62 hover:border-black/[0.12] hover:bg-white hover:text-ink dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-400 dark:hover:bg-white/[0.08] dark:hover:text-white',
                       )}
                       key={filter.value}
                       onClick={() => onFilterChange(filter.value)}
@@ -134,7 +206,7 @@ export const ArtifactDrawer = ({
                       {count > 0 && (
                         <span className={cn(
                           'rounded-full px-1.5 py-0.5 text-[10px]',
-                          isActive ? 'bg-ocean/15 dark:bg-cyan/20' : 'bg-black/[0.06] dark:bg-white/10'
+                          isActive ? 'bg-ocean/16 dark:bg-cyan/20' : 'bg-black/[0.06] dark:bg-white/10'
                         )}>
                           {count}
                         </span>
@@ -145,24 +217,44 @@ export const ArtifactDrawer = ({
               </div>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
               {isLoading ? (
                 <div className="space-y-3">
                   {Array.from({ length: 3 }).map((_, i) => (
                     <div
-                      className="h-24 rounded-2xl border border-black/[0.05] bg-white/50 animate-pulse dark:border-white/10 dark:bg-slate-900/30"
+                      className="surface-card h-24 animate-pulse"
                       key={i}
                     />
                   ))}
                 </div>
+              ) : errorMessage ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <BookOpen className="h-10 w-10 text-red-400/70 dark:text-red-400/60" />
+                  <p className="mt-3 text-sm font-semibold text-ink/70 dark:text-slate-300">
+                    Could not load {modeLabel}
+                  </p>
+                  <p className="mt-1 max-w-[280px] text-xs leading-5 text-ink/54 dark:text-slate-500">
+                    {errorMessage}
+                  </p>
+                </div>
+              ) : artifacts.length > 0 && filtered.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <BookOpen className="h-10 w-10 text-ink/28 dark:text-slate-600" />
+                  <p className="mt-3 text-sm font-semibold text-ink/60 dark:text-slate-400">
+                    No artifacts match this filter
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-ink/52 dark:text-slate-500">
+                    Try another artifact type to browse more items in this workspace.
+                  </p>
+                </div>
               ) : filtered.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <BookOpen className="h-10 w-10 text-ink/20 dark:text-slate-700" />
-                  <p className="mt-3 text-sm font-medium text-ink/50 dark:text-slate-500">
-                    No artifacts yet
+                  <BookOpen className="h-10 w-10 text-ink/28 dark:text-slate-600" />
+                  <p className="mt-3 text-sm font-semibold text-ink/60 dark:text-slate-400">
+                    {emptyState[mode].title}
                   </p>
-                  <p className="mt-1 text-xs text-ink/35 dark:text-slate-600">
-                    Generate summaries, flashcards, or notes from AI responses
+                  <p className="mt-1 text-xs leading-5 text-ink/52 dark:text-slate-500">
+                    {emptyState[mode].body}
                   </p>
                 </div>
               ) : (
@@ -179,6 +271,15 @@ export const ArtifactDrawer = ({
                         <ArtifactPreview
                           artifact={artifact}
                           onDelete={onDelete}
+                          onExport={onExport}
+                          onRevokeShare={onRevokeShare}
+                          onShare={onShare}
+                          onStartQuizReview={onStartQuizReview}
+                          onToggleFavorite={onToggleFavorite}
+                          showSessionProvenance={mode !== 'session'}
+                          isExporting={exportingArtifactId === artifact.id}
+                          isRevokingShare={revokingArtifactId === artifact.id}
+                          isSharing={sharingArtifactId === artifact.id}
                         />
                       </motion.div>
                     ))}

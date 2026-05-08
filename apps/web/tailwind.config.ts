@@ -11,14 +11,18 @@ const config: Config = {
       },
       colors: {
         ink: '#0f1720',
-        paper: '#f5f7f4',
-        slate: '#d7dfdd',
-        cyan: '#43d4c8',
-        ocean: '#0c6d7a',
+        paper: '#f6f8fb',
+        slate: '#e2e8f0',
+        cyan: '#34c6ba',
+        ocean: '#0f8b8d',
         dusk: '#0f172a',
+        mist: '#f8fafc',
+        line: '#d9e2ec',
       },
       boxShadow: {
-        soft: '0 12px 40px rgba(15, 23, 32, 0.08)',
+        soft: '0 12px 32px rgba(15, 23, 32, 0.08)',
+        subtle: '0 8px 22px rgba(15, 23, 42, 0.06)',
+        floating: '0 20px 56px rgba(15, 23, 42, 0.14)',
       },
       backgroundImage: {
         'paper-glow':

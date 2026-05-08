@@ -1,4 +1,11 @@
-import type { AIChatResult, AppLanguage, ChatMessage, ProviderKey } from '@chatbot-ai/shared';
+import type {
+  AIFallbackInfo,
+  AIChatResult,
+  AppLanguage,
+  ChatMessage,
+  ProviderKey,
+  RetrievalSnapshot,
+} from '@chatbot-ai/shared';
 
 const detectList = (input: string) =>
   input
@@ -116,11 +123,14 @@ export const buildLocalStudyFallback = (input: {
   requestedProvider?: ProviderKey;
   reason?: 'missing_configuration' | 'provider_unavailable';
   warnings: string[];
-  lastError?: unknown;
+  fallbackInfo?: AIFallbackInfo | null;
+  retrievalSnapshot?: RetrievalSnapshot | null;
 }): AIChatResult => {
   const copy = languageCopy[input.language];
   const isMissingConfiguration = input.reason === 'missing_configuration';
-  const intro = isMissingConfiguration ? copy.introMissingConfiguration : copy.introUnavailable;
+  const intro =
+    input.fallbackInfo?.notices.find((notice) => notice.category === 'local_fallback_used')?.message ??
+    (isMissingConfiguration ? copy.introMissingConfiguration : copy.introUnavailable);
   const confidenceNote = isMissingConfiguration
     ? copy.noteMissingConfiguration
     : copy.noteUnavailable;
@@ -176,11 +186,9 @@ export const buildLocalStudyFallback = (input: {
     finishReason: 'stop',
     latencyMs: 0,
     fallbackUsed: true,
-    warnings: [
-      ...input.warnings,
-      `External provider ${providerLabel} is unavailable; local study fallback was used instead.`,
-      input.lastError instanceof Error ? `Last provider error: ${input.lastError.message}` : 'Last provider error unavailable.',
-    ],
+    fallbackInfo: input.fallbackInfo ?? null,
+    warnings: Array.from(new Set(input.warnings)),
     confidenceNote,
+    retrievalSnapshot: input.retrievalSnapshot ?? null,
   };
 };

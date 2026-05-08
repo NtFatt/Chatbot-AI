@@ -1,69 +1,81 @@
-import type { AIChatResult, AppLanguage, ChatMessage, ProviderKey, RetrievalSnapshot } from '@chatbot-ai/shared';
+import type {
+  AIFallbackInfo,
+  AIFallbackNotice,
+  AIChatResult,
+  AppLanguage,
+  ChatMessage,
+  ProviderKey,
+  RetrievalSnapshot,
+} from '@chatbot-ai/shared';
 import { buildStudySystemPrompt } from '@chatbot-ai/shared';
 
 import { env } from '../../config/env';
 import { logger } from '../../config/logger';
 import { truncateText } from '../../utils/text';
 import { UsageService } from '../../modules/usage/usage.service';
-import type { ProviderDescriptor } from '../../modules/providers/providers.service';
 import { ProvidersService } from '../../modules/providers/providers.service';
 import { sanitizeAIResponse, isRenderableAIResponse } from './response-sanitizer';
 import { ProviderHealthService } from './provider-health.service';
 import type { AIConversationMessage, AIProvider, AIProviderErrorDescriptor } from './ai.types';
 import { buildLocalStudyFallback } from './local-study-fallback';
+import {
+  buildCooldownNotice,
+  buildFallbackNotice,
+  buildLocalFallbackNotice,
+  buildProviderFailureNotice,
+  buildSecondaryProviderNotice,
+  classifyProviderError,
+  isConfigurationError,
+  orderProviderCandidates,
+} from './provider-runtime';
 
-const classifyProviderError = (error: unknown): AIProviderErrorDescriptor => {
-  const message = error instanceof Error ? error.message : 'UNKNOWN_AI_PROVIDER_ERROR';
-  const normalized = message.toUpperCase();
+const dedupeFallbackNotices = (notices: AIFallbackNotice[]) => {
+  const seen = new Set<string>();
+  return notices.filter((notice) => {
+    const key = [
+      notice.category,
+      notice.provider ?? '',
+      notice.fallbackProvider ?? '',
+      notice.retryAfterSeconds ?? '',
+      notice.cooldownRemainingMs ?? '',
+      notice.message,
+    ].join('|');
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+};
 
-  if (
-    normalized.includes('TIMEOUT') ||
-    normalized.includes('RATE_LIMIT') ||
-    normalized.includes('429') ||
-    normalized.includes('ECONNRESET') ||
-    normalized.includes('ETIMEDOUT') ||
-    normalized.includes('503') ||
-    normalized.includes('502') ||
-    normalized.includes('NETWORK')
-  ) {
-    return {
-      code: normalized.replace(/\s+/g, '_').slice(0, 80) || 'AI_PROVIDER_RETRYABLE_ERROR',
-      message,
-      retryable: true,
-    };
-  }
-
-  if (
-    normalized.includes('API KEY') ||
-    normalized.includes('AUTH') ||
-    normalized.includes('UNAUTHORIZED') ||
-    normalized.includes('INVALID MODEL') ||
-    normalized.includes('MALFORMED') ||
-    normalized.includes('SAFETY')
-  ) {
-    return {
-      code: normalized.replace(/\s+/g, '_').slice(0, 80) || 'AI_PROVIDER_FATAL_ERROR',
-      message,
-      retryable: false,
-    };
+const buildFallbackInfo = (notices: AIFallbackNotice[]): AIFallbackInfo | null => {
+  const deduped = dedupeFallbackNotices(notices);
+  if (deduped.length === 0) {
+    return null;
   }
 
   return {
-    code: normalized.replace(/\s+/g, '_').slice(0, 80) || 'AI_PROVIDER_ERROR',
-    message,
-    retryable: normalized.includes('5'),
+    notices: deduped,
+    localFallbackUsed: deduped.some((notice) => notice.category === 'local_fallback_used'),
+    secondaryProviderUsed: deduped.some((notice) => notice.category === 'secondary_provider_used'),
   };
 };
 
-const isConfigurationError = (descriptor: AIProviderErrorDescriptor | null) =>
-  Boolean(
-    descriptor &&
-      (descriptor.code.includes('API_KEY') ||
-        descriptor.code.includes('AUTH') ||
-        descriptor.code.includes('UNAUTHORIZED') ||
-        descriptor.code.includes('INVALID_MODEL') ||
-        descriptor.code.includes('MALFORMED')),
-  );
+const mergeRetrievalSnapshot = (
+  retrievalSnapshot: RetrievalSnapshot | null | undefined,
+  fallbackInfo: AIFallbackInfo | null,
+): RetrievalSnapshot | null => {
+  if (!retrievalSnapshot) {
+    return null;
+  }
+
+  return fallbackInfo ? { ...retrievalSnapshot, fallbackInfo } : retrievalSnapshot;
+};
+
+const fallbackWarnings = (contextWarnings: string[], fallbackInfo: AIFallbackInfo | null) => [
+  ...contextWarnings,
+  ...(fallbackInfo?.notices.map((notice) => notice.message) ?? []),
+];
 
 export class AIOrchestratorService {
   constructor(
@@ -109,22 +121,6 @@ export class AIOrchestratorService {
     };
   }
 
-  private getOrderedProviders(
-    available: ProviderDescriptor[],
-    requestedProvider: ProviderKey | undefined,
-    sessionProvider: ProviderKey,
-    defaultProvider: ProviderKey,
-    fallbackProvider: ProviderKey | null,
-  ) {
-    const order = [requestedProvider, sessionProvider, defaultProvider, fallbackProvider].filter(
-      (item): item is ProviderKey => Boolean(item),
-    );
-
-    return Array.from(new Set(order)).flatMap((key) =>
-      available.filter((provider) => provider.key === key && provider.enabled && provider.configured),
-    );
-  }
-
   async generate(input: {
     userId: string;
     sessionId: string;
@@ -139,7 +135,7 @@ export class AIOrchestratorService {
     onChunk?: (chunk: string, provider: ProviderKey, model: string) => void;
   }): Promise<AIChatResult> {
     const providersState = await this.providersService.listProviders();
-    const candidates = this.getOrderedProviders(
+    const candidates = orderProviderCandidates(
       providersState.providers,
       input.requestedProvider,
       input.sessionProvider,
@@ -147,10 +143,11 @@ export class AIOrchestratorService {
       providersState.fallbackProvider,
     );
 
-    const { messages, warnings } = this.compactMessages({
+    const { messages, warnings: contextWarnings } = this.compactMessages({
       contextSummary: input.contextSummary,
       messages: input.messages,
     });
+    const fallbackNotices: AIFallbackNotice[] = [];
 
     const systemPrompt = buildStudySystemPrompt({
       language: input.language,
@@ -159,6 +156,19 @@ export class AIOrchestratorService {
     });
 
     if (candidates.length === 0) {
+      const provider = input.requestedProvider ?? input.sessionProvider;
+      const fallbackInfo = buildFallbackInfo([
+        buildFallbackNotice({
+          category: 'missing_credentials',
+          language: input.language,
+          provider,
+        }),
+        buildLocalFallbackNotice({
+          language: input.language,
+          provider,
+        }),
+      ]);
+
       return buildLocalStudyFallback({
         provider: input.sessionProvider,
         model: 'local-study-fallback',
@@ -166,27 +176,39 @@ export class AIOrchestratorService {
         messages: input.messages,
         requestedProvider: input.requestedProvider,
         reason: 'missing_configuration',
-        warnings: ['No external AI providers are currently available.'],
+        warnings: fallbackWarnings(contextWarnings, fallbackInfo),
+        fallbackInfo,
+        retrievalSnapshot: mergeRetrievalSnapshot(input.retrievalSnapshot, fallbackInfo),
       });
     }
 
     let lastError: unknown = null;
     let lastClassifiedError: AIProviderErrorDescriptor | null = null;
+    const failedProviders: ProviderKey[] = [];
 
     for (const [index, providerState] of candidates.entries()) {
       const availability = this.providerHealthService.canAttempt(providerState.key);
       if (!availability.allowed) {
-        warnings.push(
-          `${providerState.key} is cooling down for another ${Math.ceil(
-            availability.cooldownRemainingMs / 1000,
-          )} seconds.`,
+        fallbackNotices.push(
+          buildCooldownNotice({
+            provider: providerState.key,
+            language: input.language,
+            cooldownRemainingMs: availability.cooldownRemainingMs,
+          }),
         );
         continue;
       }
 
       const provider = this.providers[providerState.key];
       if (!provider) {
-        warnings.push(`${providerState.key} client is not initialized on this server.`);
+        failedProviders.push(providerState.key);
+        fallbackNotices.push(
+          buildFallbackNotice({
+            category: 'provider_unavailable',
+            language: input.language,
+            provider: providerState.key,
+          }),
+        );
         continue;
       }
 
@@ -224,6 +246,21 @@ export class AIOrchestratorService {
             fallbackUsed: index > 0,
           });
 
+          const successNotices = [...fallbackNotices];
+          if (index > 0) {
+            const failedProvider = failedProviders[0] ?? candidates[0]?.key;
+            if (failedProvider && failedProvider !== providerState.key) {
+              successNotices.push(
+                buildSecondaryProviderNotice({
+                  language: input.language,
+                  failedProvider,
+                  answeredBy: providerState.key,
+                }),
+              );
+            }
+          }
+          const fallbackInfo = buildFallbackInfo(successNotices);
+
           return {
             provider: providerState.key,
             model: providerState.model,
@@ -233,8 +270,9 @@ export class AIOrchestratorService {
             usage: response.usage,
             latencyMs: response.latencyMs,
             fallbackUsed: index > 0,
-            warnings,
-            retrievalSnapshot: input.retrievalSnapshot ?? null,
+            fallbackInfo,
+            warnings: fallbackWarnings(contextWarnings, fallbackInfo),
+            retrievalSnapshot: mergeRetrievalSnapshot(input.retrievalSnapshot, fallbackInfo),
           };
         } catch (error) {
           lastError = error;
@@ -275,6 +313,14 @@ export class AIOrchestratorService {
           );
 
           if (!classifiedError.retryable || attempt >= providerState.maxRetries) {
+            failedProviders.push(providerState.key);
+            fallbackNotices.push(
+              buildProviderFailureNotice({
+                provider: providerState.key,
+                language: input.language,
+                descriptor: classifiedError,
+              }),
+            );
             break;
           }
         }
@@ -284,6 +330,14 @@ export class AIOrchestratorService {
     logger.error({ err: lastError }, 'All AI providers failed');
 
     if (env.AI_LOCAL_FALLBACK_ENABLED) {
+      const fallbackInfo = buildFallbackInfo([
+        ...fallbackNotices,
+        buildLocalFallbackNotice({
+          language: input.language,
+          provider: failedProviders[0] ?? candidates[0]?.key ?? input.sessionProvider,
+        }),
+      ]);
+
       return buildLocalStudyFallback({
         provider: candidates[0]?.key ?? input.sessionProvider,
         model: candidates[0]?.model ?? 'local-study-fallback',
@@ -293,10 +347,13 @@ export class AIOrchestratorService {
         reason: isConfigurationError(lastClassifiedError)
           ? 'missing_configuration'
           : 'provider_unavailable',
-        warnings: [...warnings, 'AI provider fallback exhausted.'],
-        lastError,
+        warnings: fallbackWarnings(contextWarnings, fallbackInfo),
+        fallbackInfo,
+        retrievalSnapshot: mergeRetrievalSnapshot(input.retrievalSnapshot, fallbackInfo),
       });
     }
+
+    const fallbackInfo = buildFallbackInfo(fallbackNotices);
 
     return {
       provider: candidates[0]?.key ?? input.sessionProvider,
@@ -305,8 +362,9 @@ export class AIOrchestratorService {
       finishReason: 'error',
       latencyMs: 0,
       fallbackUsed: true,
-      warnings: [...warnings, 'AI provider fallback exhausted and local fallback is disabled.'],
-      retrievalSnapshot: input.retrievalSnapshot ?? null,
+      fallbackInfo,
+      warnings: fallbackWarnings(contextWarnings, fallbackInfo),
+      retrievalSnapshot: mergeRetrievalSnapshot(input.retrievalSnapshot, fallbackInfo),
     };
   }
 }
