@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import type {
   Response,
+  ResponseCreateParamsNonStreaming,
   ResponseCreateParamsStreaming,
   ResponseStreamEvent,
 } from 'openai/resources/responses/responses';
@@ -26,6 +27,53 @@ export class OpenAIAdapter implements AIProvider {
     const timeout = setTimeout(() => controller.abort(), request.timeoutMs);
 
     try {
+      if (request.structuredOutput) {
+        const structuredRequest: ResponseCreateParamsNonStreaming = {
+          model: request.model,
+          instructions: request.systemPrompt,
+          input: request.messages.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+          text: {
+            format: {
+              type: 'json_schema',
+              name: request.structuredOutput.name,
+              description: request.structuredOutput.description,
+              schema: request.structuredOutput.jsonSchema,
+              strict: true,
+            },
+          },
+        };
+
+        const response = await this.client.responses.create(structuredRequest, {
+          signal: controller.signal,
+        });
+        const rawText = response.output_text?.trim() ?? '';
+
+        return {
+          text: rawText,
+          structuredData: rawText ? JSON.parse(rawText) : undefined,
+          providerRequestId: response.id,
+          finishReason:
+            response.status === 'completed'
+              ? 'stop'
+              : response.status === 'incomplete'
+                ? 'length'
+                : response.status === 'failed'
+                  ? 'error'
+                  : 'unknown',
+          latencyMs: Date.now() - startedAt,
+          usage: response.usage
+            ? {
+                inputTokens: response.usage.input_tokens,
+                outputTokens: response.usage.output_tokens,
+                totalTokens: response.usage.total_tokens,
+              }
+            : undefined,
+        };
+      }
+
       const streamRequest: ResponseCreateParamsStreaming = {
         model: request.model,
         stream: true,
@@ -34,6 +82,7 @@ export class OpenAIAdapter implements AIProvider {
           role: message.role,
           content: message.content,
         })),
+        temperature: request.temperature,
       };
 
       const stream = await this.client.responses.create(streamRequest, {

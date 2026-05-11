@@ -17,6 +17,36 @@ export class GeminiAdapter implements AIProvider {
     },
   ): Promise<AIProviderResponse> {
     const startedAt = Date.now();
+    if (request.structuredOutput) {
+      const response = await Promise.race([
+        this.client.models.generateContent({
+          model: request.model,
+          contents: request.messages
+            .map((message) => `${message.role.toUpperCase()}:\n${message.content}`)
+            .join('\n\n'),
+          config: {
+            systemInstruction: request.systemPrompt,
+            temperature: request.temperature ?? 0.2,
+            responseMimeType: 'application/json',
+            responseJsonSchema: request.structuredOutput.jsonSchema,
+          },
+        }),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('GEMINI_TIMEOUT')), request.timeoutMs);
+        }),
+      ]);
+
+      const text = response.text ?? '';
+
+      return {
+        text,
+        structuredData: text ? JSON.parse(text) : undefined,
+        providerRequestId: undefined,
+        finishReason: text ? 'stop' : 'unknown',
+        latencyMs: Date.now() - startedAt,
+      };
+    }
+
     const stream = await Promise.race([
       this.client.models.generateContentStream({
         model: request.model,
@@ -25,7 +55,7 @@ export class GeminiAdapter implements AIProvider {
           .join('\n\n'),
         config: {
           systemInstruction: request.systemPrompt,
-          temperature: 0.35,
+          temperature: request.temperature ?? 0.35,
         },
       }),
       new Promise<never>((_, reject) => {

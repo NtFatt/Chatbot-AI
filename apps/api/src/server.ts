@@ -11,7 +11,16 @@ const bootstrap = async () => {
   const httpServer = createServer(app);
   const io = createSocketServer(httpServer, services.chatService);
 
-  await prisma.$connect();
+  let dbConnected = false;
+  try {
+    await prisma.$connect();
+    dbConnected = true;
+    logger.debug('Database connection established');
+  } catch (err) {
+    logger.fatal({ err }, 'Failed to connect to database at startup');
+    await prisma.$disconnect().catch(() => {});
+    process.exit(1);
+  }
   const providersState = await services.providersService.listProviders();
   const startupIssues = getAIStartupIssues();
 
@@ -74,17 +83,55 @@ const bootstrap = async () => {
     );
   });
 
-  const shutdown = async () => {
-    logger.info('Shutting down services');
-    io.close();
-    httpServer.close(async () => {
-      await prisma.$disconnect();
-      process.exit(0);
-    });
-  };
+const SERVER_CLOSE_TIMEOUT_MS = 10_000;
 
-  process.on('SIGINT', () => void shutdown());
-  process.on('SIGTERM', () => void shutdown());
+let shuttingDown = false;
+
+const shutdown = async (signal: string) => {
+  if (shuttingDown) {
+    return;
+  }
+  shuttingDown = true;
+
+  logger.info({ signal }, 'Initiating graceful shutdown');
+
+  io.close();
+  logger.debug('Socket.IO server closed');
+
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      logger.warn('HTTP server close timed out after 10s — forcing exit');
+      resolve();
+    }, SERVER_CLOSE_TIMEOUT_MS);
+
+    httpServer.close(() => {
+      clearTimeout(timer);
+      logger.debug('HTTP server closed');
+      resolve();
+    });
+  });
+
+  try {
+    await prisma.$disconnect();
+    logger.debug('Database connections closed');
+  } catch (err) {
+    logger.error({ err }, 'Error disconnecting from database');
+  }
+
+  logger.info('Graceful shutdown complete');
+  process.exit(0);
+};
+
+process.on('SIGINT', () => void shutdown('SIGINT'));
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+process.on('uncaughtException', (error) => {
+  logger.fatal({ err: error }, 'Uncaught exception — exiting');
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  logger.fatal({ reason }, 'Unhandled rejection — exiting');
+  process.exit(1);
+});
 };
 
 void bootstrap().catch(async (error) => {

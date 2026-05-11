@@ -1,4 +1,11 @@
-import type { ArtifactGenerateType } from '../types/artifacts';
+import type { ArtifactGenerateType, ArtifactRefineInstruction, ArtifactContent } from '../types/artifacts';
+
+const qualityHint = `
+Them truong "qualityScore" trong ket qua.
+- qualityScore la so tu 0 den 1.
+- Diem chi cao khi artifact ro rang, dung chu de, co cau truc, va co gia tri hoc tap truc tiep.
+- Neu noi dung nguon mo ho, hay giam diem.
+`.trim();
 
 const buildFlashcardPrompt = (content: string, language: string): string => `
 Ban la mot tro ly hoc tap AI. Tu noi dung ngu canh sau, hay tao 5 flashcard hoi-dap de nguoi hoc co the tu kiem tra kien thuc.
@@ -103,10 +110,34 @@ NGU CANH:
 ${content}
 `.trim();
 
+const buildStructuredArtifactPrompt = (type: ArtifactGenerateType, content: string, language: string) => `
+Ban la tro ly hoc tap AI chuyen tao artifact hoc tap co cau truc.
+Hay tao artifact loai "${type}" dua tren ngu canh sau.
+
+Yeu cau chung:
+- uu tien do ro rang, tinh hoc tap, tinh chinh xac
+- tranh van phong qua dai dong
+- duoc phep bo qua thong tin yeu neu khong can thiet
+- output phai phu hop schema duoc cung cap boi he thong
+- ${qualityHint.replace(/\n/g, ' ')}
+- Neu ngu canh bang tieng Viet, artifact uu tien tieng Viet
+- Neu ngu canh bang tieng Anh, artifact uu tien tieng Anh
+- Ngon ngu uu tien hien tai: ${language}
+
+NGU CANH:
+${content}
+`.trim();
+
 export const buildArtifactSystemPrompt = (): string => `
 Ban la tro ly hoc tap AI chuyen tao noi dung hoc thuat co cau truc.
 Ban chi tra ve JSON thuan, khong co explanation, khong co markdown code blocks, khong co text khac ngoai JSON.
 Ranh gioi JSON phai chinh xac, co the parse bang JSON.parse() ma khong co loi.
+`.trim();
+
+export const buildStructuredArtifactSystemPrompt = (): string => `
+Ban la tro ly hoc tap AI chuyen tao artifact hoc tap dang JSON schema.
+He thong se validate output cua ban mot cach nghiem ngat.
+Chi dien du lieu hop schema, ngan gon, chinh xac, huu ich cho viec hoc.
 `.trim();
 
 export const buildArtifactUserPrompt = (
@@ -125,3 +156,44 @@ export const buildArtifactUserPrompt = (
       return buildNotePrompt(content, language);
   }
 };
+
+export const buildStructuredArtifactUserPrompt = (
+  type: ArtifactGenerateType,
+  content: string,
+  language: string,
+) => buildStructuredArtifactPrompt(type, content, language);
+
+const artifactRefineInstructionLabels: Record<ArtifactRefineInstruction, string> = {
+  make_easier: 'Lam artifact de hieu hon cho nguoi moi hoc, giai thich don gian hon.',
+  make_harder: 'Tang do kho va do sau, bo sung cac diem mang tinh phan tich hon.',
+  add_examples: 'Them vi du cu the, gan thuc te hoc tap hoac bai tap.',
+  shorten: 'Rut gon artifact, giu lai nhung y can thiet nhat.',
+  expand: 'Mo rong artifact de day du hon, bo sung y con thieu neu can.',
+  fix_accuracy: 'Ra soat va sua cac chi tiet de chinh xac hon voi kien thuc hoc tap.',
+  custom: 'Lam theo huong dan tuy chinh duoc nguoi dung cung cap.',
+};
+
+export const buildStructuredArtifactRefinePrompt = (input: {
+  type: ArtifactGenerateType;
+  language: string;
+  currentContent: ArtifactContent;
+  instruction: ArtifactRefineInstruction;
+  customInstruction?: string;
+}) => `
+Ban la tro ly hoc tap AI dang refine mot study artifact co cau truc.
+Hay chinh sua artifact loai "${input.type}" theo yeu cau duoi day, nhung van phai tra ve du lieu hop schema.
+
+Yeu cau refine:
+- ${artifactRefineInstructionLabels[input.instruction]}
+${input.customInstruction ? `- Chi dan tuy chinh bo sung: ${input.customInstruction}` : ''}
+
+Nguyen tac:
+- Giu dung y chinh cua artifact goc neu khong co ly do chinh xac de sua.
+- Neu phat hien diem sai hoac mo ho, uu tien sua cho dung.
+- Output phai ngan gon, huu ich, va hop schema.
+- Neu co the, cap nhat qualityScore phu hop chat luong moi; neu khong chac, co the de null.
+- Ngon ngu uu tien hien tai: ${input.language}
+
+ARTIFACT HIEN TAI (JSON):
+${JSON.stringify(input.currentContent, null, 2)}
+`.trim();

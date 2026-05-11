@@ -1,0 +1,287 @@
+import type {
+  CreateEvalCaseInput,
+  CreateEvalRunInput,
+  EvalCase,
+  EvalRun,
+  ProviderKey,
+  TrainingMessage,
+  UpdateEvalCaseInput,
+} from '@chatbot-ai/shared';
+import type {
+  EvalCase as PrismaEvalCase,
+  EvalRun as PrismaEvalRun,
+  EvalRunResult as PrismaEvalRunResult,
+} from '@prisma/client';
+
+import { ModelGatewayService } from '../../integrations/ai/model-gateway.service';
+import type { AIConversationMessage } from '../../integrations/ai/ai.types';
+import { AppError } from '../../utils/errors';
+import { ModelRegistryService } from '../model-registry/model-registry.service';
+import { ProvidersService } from '../providers/providers.service';
+import { EvalsRepository } from './evals.repository';
+
+const toIso = (value: Date) => value.toISOString();
+
+const normalizeText = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const tokenize = (value: string) =>
+  normalizeText(value)
+    .split(' ')
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 3);
+
+const average = (scores: number[]) =>
+  scores.length === 0
+    ? 0
+    : Number((scores.reduce((total, score) => total + score, 0) / scores.length).toFixed(2));
+
+const mapEvalCase = (item: PrismaEvalCase): EvalCase => ({
+  id: item.id,
+  name: item.name,
+  description: item.description ?? null,
+  category: item.category,
+  inputMessages: item.inputMessages as unknown as TrainingMessage[],
+  idealResponse: item.idealResponse ?? null,
+  scoringNotes: item.scoringNotes ?? null,
+  createdAt: toIso(item.createdAt),
+  updatedAt: toIso(item.updatedAt),
+});
+
+const mapEvalRun = (
+  run: PrismaEvalRun & {
+    results: Array<PrismaEvalRunResult & { evalCase: PrismaEvalCase }>;
+  },
+): EvalRun => ({
+  id: run.id,
+  provider: run.provider,
+  model: run.model,
+  modelVersionId: run.modelVersionId ?? null,
+  averageScore: run.averageScore ?? null,
+  notes: run.notes ?? null,
+  createdAt: toIso(run.createdAt),
+  updatedAt: toIso(run.updatedAt),
+  results: run.results.map((result) => ({
+    id: result.id,
+    runId: result.runId,
+    evalCaseId: result.evalCaseId,
+    evalCaseName: result.evalCase.name,
+    category: result.evalCase.category,
+    output: result.output,
+    score: result.score,
+    notes: result.notes ?? null,
+    createdAt: toIso(result.createdAt),
+  })),
+});
+
+const buildEvalPrompt = (evalCase: EvalCase): {
+  systemPrompt: string;
+  messages: AIConversationMessage[];
+} => {
+  const systemParts = [
+    'You are participating in a benchmark for a Vietnamese study assistant. Answer naturally and helpfully.',
+    ...evalCase.inputMessages
+      .filter((message) => message.role === 'system')
+      .map((message) => message.content),
+  ];
+  const messages = evalCase.inputMessages
+    .filter((message) => message.role !== 'system')
+    .map((message) => ({
+      role: message.role === 'assistant' ? 'assistant' : 'user',
+      content: message.content,
+    })) satisfies AIConversationMessage[];
+
+  return {
+    systemPrompt: systemParts.join('\n\n').trim(),
+    messages:
+      messages.length > 0
+        ? messages
+        : [
+            {
+              role: 'user',
+              content: `${evalCase.name}\n\n${evalCase.description ?? 'Provide the best response for this evaluation case.'}`,
+            },
+          ],
+  };
+};
+
+const scoreEvalOutput = (evalCase: EvalCase, output: string) => {
+  const outputTokens = new Set(tokenize(output));
+  const idealTokens = evalCase.idealResponse ? Array.from(new Set(tokenize(evalCase.idealResponse))) : [];
+  const overlap =
+    idealTokens.length === 0
+      ? outputTokens.size > 0
+        ? 0.65
+        : 0
+      : idealTokens.filter((token) => outputTokens.has(token)).length / idealTokens.length;
+  const structureBonus =
+    evalCase.category === 'generate_quiz'
+      ? /(\?|A\.|B\.|C\.|D\.)/.test(output)
+        ? 0.15
+        : 0
+      : evalCase.category === 'summarize_lesson'
+        ? /(^[-*•]|\n[-*•]|\n\d+\.)/m.test(output)
+          ? 0.1
+          : 0
+        : evalCase.category === 'source_grounded_answer'
+          ? /(nguon|source|tai lieu|trich)/i.test(output)
+            ? 0.08
+            : 0
+          : 0;
+  const lengthFactor = Math.min(output.trim().length / 240, 1);
+  const score = Number(Math.min(1, overlap * 0.7 + structureBonus + lengthFactor * 0.2).toFixed(2));
+
+  return {
+    score,
+    notes:
+      idealTokens.length > 0
+        ? `Keyword overlap: ${Math.round(overlap * 100)}%. Structure bonus: ${structureBonus.toFixed(2)}.`
+        : `No reference answer provided. Length factor: ${lengthFactor.toFixed(2)}.`,
+  };
+};
+
+const resolveRuntimeProvider = (provider: string): ProviderKey => {
+  switch (provider) {
+    case 'gemini':
+      return 'GEMINI';
+    case 'openai':
+    case 'fine_tuned_openai':
+      return 'OPENAI';
+    default:
+      throw new AppError(
+        400,
+        'EVAL_PROVIDER_UNSUPPORTED',
+        'The selected model version cannot be benchmarked with the current runtime adapters.',
+      );
+  }
+};
+
+export class EvalsService {
+  constructor(
+    private readonly repository: EvalsRepository,
+    private readonly providersService: ProvidersService,
+    private readonly modelRegistryService: ModelRegistryService,
+    private readonly modelGatewayService: ModelGatewayService,
+  ) {}
+
+  async listCases(): Promise<EvalCase[]> {
+    const items = await this.repository.listCases();
+    return items.map(mapEvalCase);
+  }
+
+  async createCase(input: CreateEvalCaseInput): Promise<EvalCase> {
+    const created = await this.repository.createCase({
+      name: input.name.trim(),
+      description: input.description?.trim() ?? null,
+      category: input.category,
+      inputMessages: input.inputMessages,
+      idealResponse: input.idealResponse?.trim() ?? null,
+      scoringNotes: input.scoringNotes?.trim() ?? null,
+    });
+
+    return mapEvalCase(created);
+  }
+
+  async updateCase(id: string, input: UpdateEvalCaseInput): Promise<EvalCase> {
+    const existing = await this.repository.findCaseById(id);
+    if (!existing) {
+      throw new AppError(404, 'EVAL_CASE_NOT_FOUND', 'Evaluation case not found.');
+    }
+
+    const updated = await this.repository.updateCase(id, {
+      name: input.name?.trim(),
+      description: input.description === undefined ? undefined : input.description?.trim() ?? null,
+      category: input.category,
+      inputMessages: input.inputMessages,
+      idealResponse: input.idealResponse === undefined ? undefined : input.idealResponse?.trim() ?? null,
+      scoringNotes: input.scoringNotes === undefined ? undefined : input.scoringNotes?.trim() ?? null,
+    });
+
+    return mapEvalCase(updated);
+  }
+
+  async deleteCase(id: string) {
+    const existing = await this.repository.findCaseById(id);
+    if (!existing) {
+      throw new AppError(404, 'EVAL_CASE_NOT_FOUND', 'Evaluation case not found.');
+    }
+
+    await this.repository.deleteCase(id);
+  }
+
+  async listRuns(): Promise<EvalRun[]> {
+    const runs = await this.repository.listRuns();
+    return runs.map(mapEvalRun);
+  }
+
+  async createRun(input: CreateEvalRunInput): Promise<EvalRun> {
+    const evalCases = (await this.repository.findCasesByIds(input.evalCaseIds)).map(mapEvalCase);
+    if (evalCases.length === 0) {
+      throw new AppError(400, 'EVAL_CASES_EMPTY', 'At least one evaluation case is required to start a run.');
+    }
+
+    let provider: ProviderKey;
+    let model: string;
+    let modelVersionId: string | null = null;
+
+    if (input.modelVersionId) {
+      const version = await this.modelRegistryService.getVersionById(input.modelVersionId);
+      provider = resolveRuntimeProvider(version.provider);
+      model = version.fineTunedModel ?? version.baseModel;
+      modelVersionId = version.id;
+    } else {
+      const providerState = await this.providersService.listProviders();
+      provider = input.provider ?? providerState.defaultProvider;
+      const descriptor = providerState.providers.find((item) => item.key === provider);
+      if (!descriptor) {
+        throw new AppError(503, 'EVAL_PROVIDER_UNAVAILABLE', 'Requested provider is not available.');
+      }
+      model = input.model ?? descriptor.model;
+      modelVersionId = descriptor.modelVersionId ?? null;
+    }
+
+    const results = await Promise.all(evalCases.map(async (evalCase) => {
+      const prompt = buildEvalPrompt(evalCase);
+
+      try {
+        const response = await this.modelGatewayService.generateSingle({
+          provider,
+          model,
+          systemPrompt: prompt.systemPrompt,
+          messages: prompt.messages,
+          temperature: 0.2,
+        });
+        const scoring = scoreEvalOutput(evalCase, response.text);
+
+        return {
+          evalCaseId: evalCase.id,
+          output: response.text,
+          score: scoring.score,
+          notes: scoring.notes,
+        };
+      } catch (error) {
+        return {
+          evalCaseId: evalCase.id,
+          output: '',
+          score: 0,
+          notes: error instanceof Error ? error.message : 'Benchmark execution failed.',
+        };
+      }
+    }));
+
+    const run = await this.repository.createRun({
+      provider,
+      model,
+      modelVersionId,
+      averageScore: average(results.map((result) => result.score)),
+      notes: input.notes?.trim() ?? null,
+      results,
+    });
+
+    return mapEvalRun(run);
+  }
+}

@@ -11,12 +11,19 @@ export interface AIProviderRequest {
   systemPrompt: string;
   messages: AIConversationMessage[];
   timeoutMs: number;
+  temperature?: number;
+  structuredOutput?: {
+    name: string;
+    description?: string;
+    jsonSchema: Record<string, unknown>;
+  };
 }
 
 export interface AIProviderResponse {
   text: string;
   finishReason: 'stop' | 'length' | 'error' | 'unknown';
   latencyMs: number;
+  structuredData?: unknown;
   providerRequestId?: string;
   usage?: {
     inputTokens?: number;

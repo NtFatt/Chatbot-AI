@@ -61,6 +61,65 @@ enum ArtifactType {
   note
 }
 
+enum ReviewSelfAssessment {
+  again
+  hard
+  good
+  easy
+}
+
+enum TrainingDatasetStatus {
+  draft
+  active
+  archived
+}
+
+enum TrainingExampleSourceType {
+  chat_message
+  artifact_refinement
+  manual
+}
+
+enum TrainingExampleStatus {
+  draft
+  approved
+  rejected
+}
+
+enum EvalCategory {
+  explain_concept
+  socratic_hint
+  grade_answer
+  generate_quiz
+  summarize_lesson
+  source_grounded_answer
+  fallback_transparency
+}
+
+enum ModelVersionProvider {
+  gemini
+  openai
+  fine_tuned_openai
+  local_ollama
+  local_lora
+}
+
+enum ModelVersionStatus {
+  draft
+  training
+  ready
+  failed
+  archived
+}
+
+enum TrainingJobStatus {
+  draft
+  queued
+  running
+  succeeded
+  failed
+}
+
 model User {
   id                String        @id @default(uuid())
   displayName       String
@@ -72,6 +131,7 @@ model User {
   chatSessions      ChatSession[]
   aiUsageLogs       AiUsageLog[]
   studyArtifacts    StudyArtifact[]
+  reviewHistory     ReviewHistory[]
 
   @@map("users")
 }
@@ -114,6 +174,7 @@ model ChatSession {
   pinnedAt           DateTime?
   isArchived         Boolean              @default(false)
   archivedAt         DateTime?
+  lastReadAt         DateTime?
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
   user               User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -124,6 +185,7 @@ model ChatSession {
 
   @@index([userId, isPinned(sort: Desc), updatedAt(sort: Desc)])
   @@index([userId, isArchived, updatedAt(sort: Desc)])
+  @@index([userId, lastReadAt(sort: Desc)])
   @@map("chat_sessions")
 }
 
@@ -143,6 +205,10 @@ model Message {
   inputTokens     Int?
   outputTokens    Int?
   totalTokens     Int?
+  confidenceScore Float?
+  subjectLabel    String?
+  topicLabel      String?
+  levelLabel      MaterialLevel?
   retrievalSnapshot Json?
   fallbackUsed    Boolean       @default(false)
   errorCode       String?
@@ -275,16 +341,170 @@ model StudyArtifact {
   type        ArtifactType
   title       String
   content     Json
+  isFavorited Boolean      @default(false)
+  qualityScore Float?
+  shareToken  String?      @unique
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   session     ChatSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   message     Message?     @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  reviewHistory ReviewHistory[]
 
   @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, isFavorited, createdAt(sort: Desc)])
   @@index([userId, type])
   @@index([sessionId])
   @@index([messageId])
   @@map("study_artifacts")
+}
+
+model ReviewHistory {
+  id             String               @id @default(uuid())
+  userId         String
+  artifactId     String
+  itemIndex      Int
+  selfAssessment ReviewSelfAssessment
+  reviewedAt     DateTime             @default(now())
+
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  artifact       StudyArtifact        @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+
+  @@index([userId, reviewedAt])
+  @@index([artifactId])
+  @@map("review_history")
+}
+
+model TrainingDataset {
+  id          String                @id @default(uuid())
+  name        String
+  description String?
+  status      TrainingDatasetStatus @default(draft)
+  version     Int                   @default(1)
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  examples    TrainingExample[]
+  trainingJobs TrainingJob[]
+
+  @@index([status, updatedAt(sort: Desc)])
+  @@map("training_datasets")
+}
+
+model TrainingExample {
+  id           String                    @id @default(uuid())
+  datasetId    String
+  sourceType   TrainingExampleSourceType
+  sourceId     String?
+  subject      String?
+  topic        String?
+  learningMode String?
+  userLevel    String?
+  inputMessages Json
+  idealResponse String
+  qualityScore Int                       @default(3)
+  status       TrainingExampleStatus     @default(draft)
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+
+  dataset      TrainingDataset           @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+
+  @@index([datasetId, status, updatedAt(sort: Desc)])
+  @@index([sourceType, sourceId])
+  @@map("training_examples")
+}
+
+model EvalCase {
+  id            String        @id @default(uuid())
+  name          String
+  description   String?
+  category      EvalCategory
+  inputMessages Json
+  idealResponse String?
+  scoringNotes  String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  results       EvalRunResult[]
+
+  @@index([category, updatedAt(sort: Desc)])
+  @@map("eval_cases")
+}
+
+model EvalRun {
+  id             String         @id @default(uuid())
+  provider       ProviderKey
+  model          String
+  modelVersionId String?
+  averageScore   Float?
+  notes          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  modelVersion   ModelVersion?  @relation(fields: [modelVersionId], references: [id], onDelete: SetNull)
+  results        EvalRunResult[]
+
+  @@index([provider, createdAt(sort: Desc)])
+  @@index([modelVersionId])
+  @@map("eval_runs")
+}
+
+model EvalRunResult {
+  id         String    @id @default(uuid())
+  runId       String
+  evalCaseId  String
+  output      String
+  score       Float
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  run         EvalRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  evalCase    EvalCase @relation(fields: [evalCaseId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+  @@index([evalCaseId])
+  @@map("eval_run_results")
+}
+
+model ModelVersion {
+  id             String               @id @default(uuid())
+  name           String
+  provider       ModelVersionProvider
+  baseModel      String
+  fineTunedModel String?
+  status         ModelVersionStatus   @default(draft)
+  isActive       Boolean              @default(false)
+  metadata       Json?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  evalRuns       EvalRun[]
+  trainingJobs   TrainingJob[]
+
+  @@index([provider, isActive])
+  @@index([status, updatedAt(sort: Desc)])
+  @@map("model_versions")
+}
+
+model TrainingJob {
+  id            String               @id @default(uuid())
+  datasetId      String
+  provider       ModelVersionProvider
+  baseModel      String
+  status         TrainingJobStatus   @default(draft)
+  externalJobId  String?
+  modelVersionId String?
+  errorMessage   String?
+  metadata       Json?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  dataset        TrainingDataset     @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  modelVersion   ModelVersion?       @relation(fields: [modelVersionId], references: [id], onDelete: SetNull)
+
+  @@index([datasetId, createdAt(sort: Desc)])
+  @@index([provider, status, createdAt(sort: Desc)])
+  @@index([modelVersionId])
+  @@map("training_jobs")
 }

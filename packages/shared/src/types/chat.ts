@@ -1,5 +1,12 @@
 import type { ProviderKey } from '../constants/providers';
-import type { AIFinishReason, MessageStatus, SenderType } from '../constants/ui';
+import type {
+  AIFinishReason,
+  ConfidenceLevel,
+  MaterialLevel,
+  MessageStatus,
+  SenderType,
+} from '../constants/ui';
+import type { AIFallbackInfo } from './ai-fallback';
 import type { RetrievalSnapshot } from './materials';
 
 export interface ChatSessionSummary {
@@ -16,6 +23,7 @@ export interface ChatSessionSummary {
   lastMessagePreview: string | null;
   messageCount: number;
   artifactCount: number;
+  isUnread?: boolean;
 }
 
 export interface ChatMessage {
@@ -34,7 +42,13 @@ export interface ChatMessage {
   inputTokens: number | null;
   outputTokens: number | null;
   totalTokens: number | null;
+  confidenceScore: number | null;
+  confidenceLevel: ConfidenceLevel | null;
+  subjectLabel: string | null;
+  topicLabel: string | null;
+  levelLabel: MaterialLevel | null;
   fallbackUsed: boolean;
+  fallbackInfo?: AIFallbackInfo | null;
   retrievalSnapshot: RetrievalSnapshot | null;
   errorCode: string | null;
   createdAt: string;
@@ -57,13 +71,20 @@ export interface AIChatRequest {
 export interface AIChatResult {
   provider: ProviderKey;
   model: string;
+  modelVersionId?: string | null;
   contentMarkdown: string;
   finishReason: AIFinishReason;
   usage?: TokenUsage;
   latencyMs: number;
   fallbackUsed: boolean;
+  fallbackInfo?: AIFallbackInfo | null;
   warnings: string[];
   confidenceNote?: string;
+  confidenceScore?: number | null;
+  confidenceLevel?: ConfidenceLevel | null;
+  subjectLabel?: string | null;
+  topicLabel?: string | null;
+  levelLabel?: MaterialLevel | null;
   providerRequestId?: string;
   retrievalSnapshot?: RetrievalSnapshot | null;
 }
@@ -72,4 +93,13 @@ export interface ChatAskResponse {
   userMessage: ChatMessage;
   assistantMessage: ChatMessage;
   ai: AIChatResult;
+}
+
+export interface GlobalSearchResult {
+  sessionId: string;
+  sessionTitle: string;
+  messageId: string;
+  preview: string;
+  senderType: SenderType;
+  createdAt: string;
 }

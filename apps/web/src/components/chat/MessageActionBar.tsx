@@ -77,7 +77,7 @@ export const MessageActionBar = ({
   };
 
   return (
-    <div className="mt-4 flex flex-wrap items-center gap-2">
+    <div className="mt-4 flex flex-wrap items-center gap-2.5">
       <Button
         leading={<Copy className="h-3.5 w-3.5" />}
         onClick={() => void copyContent()}
@@ -115,7 +115,7 @@ export const MessageActionBar = ({
                 onClick={() => void handleGenerate(type)}
                 size="sm"
                 type="button"
-                variant="ghost"
+                variant="secondary"
                 disabled={isGenerating || generatingType !== null}
               >
                 {isGenerating ? 'Đang tạo...' : label}
@@ -132,7 +132,7 @@ export const MessageActionBar = ({
               onClick={() => onPrefill(prompt)}
               size="sm"
               type="button"
-              variant="ghost"
+              variant="secondary"
             >
               {label}
             </Button>

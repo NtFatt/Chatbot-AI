@@ -1,4 +1,5 @@
 import type { MaterialLevel, MaterialType } from '../constants/ui';
+import type { AIFallbackInfo } from './ai-fallback';
 
 export interface MaterialSubject {
   id: string;
@@ -48,8 +49,10 @@ export interface RetrievalMaterialSource extends Record<string, unknown> {
 export interface RetrievalSnapshot extends Record<string, unknown> {
   inferredSubject?: string | null;
   inferredTopic?: string | null;
+  modelVersionId?: string | null;
   queryExpansion: string[];
   materials: RetrievalMaterialSource[];
+  fallbackInfo?: AIFallbackInfo | null;
 }
 
 export interface MaterialSearchParams {

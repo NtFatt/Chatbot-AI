@@ -1,4 +1,5 @@
 import type {
+  AIFallbackInfo,
   ChatAskResponse,
   ChatMessage,
   ChatSessionSummary,
@@ -14,6 +15,7 @@ import { AIOrchestratorService } from '../../integrations/ai/ai-orchestrator.ser
 import { RetrievalService } from '../../integrations/retrieval/retrieval.service';
 import { ChatRepository } from './chat.repository';
 import { ChatGuardService } from './chat-guard.service';
+import { SessionIntelligenceService } from './session-intelligence.service';
 
 const DEFAULT_SESSION_TITLE = 'Tro chuyen moi / New study chat';
 
@@ -22,7 +24,7 @@ const toJsonValue = (value: RetrievalSnapshot | null | undefined): Prisma.InputJ
   value ? (JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue) : undefined;
 
 const mapSession = (
-  session: Awaited<ReturnType<ChatRepository['listSessions']>>[number] | Awaited<ReturnType<ChatRepository['listArchivedSessions']>>[number],
+  session: Awaited<ReturnType<ChatRepository['listSessions']>>['items'][number],
 ): ChatSessionSummary => ({
   id: session.id,
   title: session.title,
@@ -37,6 +39,10 @@ const mapSession = (
   lastMessagePreview: session.messages[0]?.content ?? null,
   messageCount: session._count.messages,
   artifactCount: session._count.studyArtifacts,
+  isUnread:
+    session.lastReadAt != null
+      ? session.updatedAt > session.lastReadAt
+      : session._count.messages > 0,
 });
 
 const mapMessage = (
@@ -44,7 +50,11 @@ const mapMessage = (
     | Awaited<ReturnType<ChatRepository['getMessages']>>[number]
     | Awaited<ReturnType<ChatRepository['createMessage']>>
     | Awaited<ReturnType<ChatRepository['updateMessage']>>,
-): ChatMessage => ({
+): ChatMessage => {
+  const retrievalSnapshot = (message.retrievalSnapshot as RetrievalSnapshot | null) ?? null;
+  const fallbackInfo = (retrievalSnapshot?.fallbackInfo as AIFallbackInfo | null | undefined) ?? null;
+
+  return ({
   id: message.id,
   sessionId: message.sessionId,
   clientMessageId: message.clientMessageId,
@@ -60,12 +70,26 @@ const mapMessage = (
   inputTokens: message.inputTokens ?? null,
   outputTokens: message.outputTokens ?? null,
   totalTokens: message.totalTokens ?? null,
+  confidenceScore: message.confidenceScore ?? null,
+  confidenceLevel:
+    message.confidenceScore == null
+      ? null
+      : message.confidenceScore >= 0.75
+        ? 'high'
+        : message.confidenceScore >= 0.5
+          ? 'medium'
+          : 'low',
+  subjectLabel: message.subjectLabel ?? null,
+  topicLabel: message.topicLabel ?? null,
+  levelLabel: message.levelLabel ?? null,
   fallbackUsed: message.fallbackUsed,
-  retrievalSnapshot: (message.retrievalSnapshot as RetrievalSnapshot | null) ?? null,
+  fallbackInfo,
+  retrievalSnapshot,
   errorCode: message.errorCode ?? null,
   createdAt: toIso(message.createdAt),
   updatedAt: toIso(message.updatedAt),
-});
+  });
+};
 
 export class ChatService {
   constructor(
@@ -74,6 +98,7 @@ export class ChatService {
     private readonly aiOrchestrator: AIOrchestratorService,
     private readonly retrievalService: RetrievalService,
     private readonly chatGuardService: ChatGuardService,
+    private readonly sessionIntelligenceService: SessionIntelligenceService,
   ) {}
 
   private assistantClientMessageId(clientMessageId: string) {
@@ -109,14 +134,38 @@ export class ChatService {
     });
   }
 
-  async listSessions(userId: string) {
-    const sessions = await this.chatRepository.listSessions(userId);
+  async listSessions(userId: string, cursor?: string | null, limit?: number) {
+    const result = await this.chatRepository.listSessions(userId, { cursor, limit });
+    return {
+      items: result.items.map(mapSession),
+      nextCursor: result.nextCursor,
+      totalCount: result.totalCount,
+      hasMore: result.hasMore,
+    };
+  }
+
+  async listArchivedSessions(userId: string, cursor?: string | null, limit?: number) {
+    const result = await this.chatRepository.listArchivedSessions(userId, { cursor, limit });
+    return {
+      items: result.items.map(mapSession),
+      nextCursor: result.nextCursor,
+      totalCount: result.totalCount,
+      hasMore: result.hasMore,
+    };
+  }
+
+  async listContinueLearningSessions(userId: string) {
+    const sessions = await this.chatRepository.listContinueLearningSessions(userId);
     return sessions.map(mapSession);
   }
 
-  async listArchivedSessions(userId: string) {
-    const sessions = await this.chatRepository.listArchivedSessions(userId);
+  async searchSessions(userId: string, query: string) {
+    const sessions = await this.chatRepository.searchSessions(userId, query);
     return sessions.map(mapSession);
+  }
+
+  async globalSearch(userId: string, query: string, limit = 10, offset = 0) {
+    return this.chatRepository.globalSearch(userId, query, limit, offset);
   }
 
   async createSession(
@@ -146,6 +195,7 @@ export class ChatService {
       lastMessagePreview: null,
       messageCount: 0,
       artifactCount: 0,
+      isUnread: false,
     } satisfies ChatSessionSummary;
   }
 
@@ -180,6 +230,10 @@ export class ChatService {
       lastMessagePreview: null,
       messageCount: 0,
       artifactCount: 0,
+      isUnread:
+        session.lastReadAt != null
+          ? session.updatedAt > session.lastReadAt
+          : false,
     } satisfies ChatSessionSummary;
   }
 
@@ -188,8 +242,17 @@ export class ChatService {
     await this.chatRepository.deleteSession(sessionId, userId);
   }
 
+  async batchArchiveSessions(userId: string, sessionIds: string[]) {
+    await this.chatRepository.batchArchiveSessions(sessionIds, userId);
+  }
+
+  async batchDeleteSessions(userId: string, sessionIds: string[]) {
+    await this.chatRepository.batchDeleteSessions(sessionIds, userId);
+  }
+
   async getMessages(userId: string, sessionId: string) {
     await this.ensureSession(sessionId, userId);
+    await this.chatRepository.markSessionRead(sessionId, userId);
     const messages = await this.chatRepository.getMessages(sessionId, userId);
     return messages.map(mapMessage);
   }
@@ -246,6 +309,11 @@ export class ChatService {
           },
           latencyMs: existingAssistantMessage.latencyMs ?? 0,
           fallbackUsed: existingAssistantMessage.fallbackUsed,
+          fallbackInfo:
+            ((existingAssistantMessage.retrievalSnapshot as RetrievalSnapshot | null)?.fallbackInfo as
+              | AIFallbackInfo
+              | null
+              | undefined) ?? null,
           warnings: ['Existing response reused.'],
           retrievalSnapshot:
             (existingAssistantMessage.retrievalSnapshot as RetrievalSnapshot | null) ?? null,
@@ -265,6 +333,27 @@ export class ChatService {
           });
 
     callbacks?.onUserMessage?.(mapMessage(userMessage));
+
+    // Retitle session immediately after user message is saved — before AI starts
+    const updatedSession = await this.maybeRetitleSession(session, userMessage.content);
+    if (updatedSession) {
+      callbacks?.onSessionUpdated?.({
+        id: updatedSession.id,
+        title: updatedSession.title,
+        providerPreference: updatedSession.providerPreference,
+        contextSummary: updatedSession.contextSummary,
+        isPinned: updatedSession.isPinned,
+        pinnedAt: updatedSession.pinnedAt ? toIso(updatedSession.pinnedAt) : null,
+        isArchived: updatedSession.isArchived,
+        archivedAt: updatedSession.archivedAt ? toIso(updatedSession.archivedAt) : null,
+        createdAt: toIso(updatedSession.createdAt),
+        updatedAt: toIso(updatedSession.updatedAt),
+        lastMessagePreview: userMessage.content,
+        messageCount: 0,
+        artifactCount: 0,
+        isUnread: updatedSession.lastReadAt != null && updatedSession.updatedAt > updatedSession.lastReadAt,
+      });
+    }
 
     const retrievalContext = await this.retrievalService.retrieveForQuestion({
       userId,
@@ -300,25 +389,6 @@ export class ChatService {
             retrievalSnapshot: toJsonValue(retrievalContext),
           });
 
-    const updatedSession = await this.maybeRetitleSession(session, userMessage.content);
-    if (updatedSession) {
-      callbacks?.onSessionUpdated?.({
-        id: updatedSession.id,
-        title: updatedSession.title,
-        providerPreference: updatedSession.providerPreference,
-        contextSummary: updatedSession.contextSummary,
-        isPinned: updatedSession.isPinned,
-        pinnedAt: updatedSession.pinnedAt ? toIso(updatedSession.pinnedAt) : null,
-        isArchived: updatedSession.isArchived,
-        archivedAt: updatedSession.archivedAt ? toIso(updatedSession.archivedAt) : null,
-        createdAt: toIso(updatedSession.createdAt),
-        updatedAt: toIso(updatedSession.updatedAt),
-        lastMessagePreview: userMessage.content,
-        messageCount: 0,
-        artifactCount: 0,
-      });
-    }
-
     const contextMessages = await this.chatRepository.getContextMessages(payload.sessionId, 20);
     let started = false;
     const releaseStream = this.chatGuardService.beginStream(userId);
@@ -344,6 +414,21 @@ export class ChatService {
           callbacks?.onAIChunk?.(chunk, provider, model);
         },
       });
+      const assistantRetrievalSnapshot = {
+        ...(aiResult.retrievalSnapshot ?? retrievalContext),
+        ...(aiResult.modelVersionId ? { modelVersionId: aiResult.modelVersionId } : {}),
+      } satisfies RetrievalSnapshot;
+      const turnIntelligence = await this.sessionIntelligenceService.inferTurnMetadata({
+        userId,
+        sessionId: payload.sessionId,
+        requestedProvider: payload.provider,
+        sessionProvider: session.providerPreference,
+        language: user.preferredLanguage,
+        currentTitle: updatedSession?.title ?? session.title,
+        question: normalizedMessage,
+        answer: aiResult.contentMarkdown,
+        retrievalSnapshot: assistantRetrievalSnapshot,
+      });
 
       const finalAssistant = await this.chatRepository.updateMessage({
         clientMessageId: assistantClientMessageId,
@@ -357,16 +442,35 @@ export class ChatService {
         inputTokens: aiResult.usage?.inputTokens ?? null,
         outputTokens: aiResult.usage?.outputTokens ?? null,
         totalTokens: aiResult.usage?.totalTokens ?? null,
+        confidenceScore: turnIntelligence.confidenceScore,
+        subjectLabel: turnIntelligence.subjectLabel,
+        topicLabel: turnIntelligence.topicLabel,
+        levelLabel: turnIntelligence.levelLabel,
         fallbackUsed: aiResult.fallbackUsed,
-        retrievalSnapshot: toJsonValue(aiResult.retrievalSnapshot ?? retrievalContext),
+        retrievalSnapshot: toJsonValue(assistantRetrievalSnapshot),
         errorCode: aiResult.finishReason === 'error' ? 'AI_PROVIDER_FAILURE' : null,
       });
 
+      const recentMessages = [...contextMessages.map(mapMessage), mapMessage(finalAssistant)];
+      const summaryResult = await this.sessionIntelligenceService.summarizeLongSession({
+        userId,
+        sessionId: payload.sessionId,
+        requestedProvider: payload.provider,
+        sessionProvider: session.providerPreference,
+        language: user.preferredLanguage,
+        currentTitle: updatedSession?.title ?? session.title,
+        existingSummary: updatedSession?.contextSummary ?? session.contextSummary,
+        messages: recentMessages,
+      });
       const recentMessageTexts = [...contextMessages, finalAssistant].map((message) => message.content);
       const summarizedSession = await this.chatRepository.updateSession({
         sessionId: payload.sessionId,
         userId,
-        contextSummary: buildContextSummary(recentMessageTexts),
+        title:
+          (updatedSession?.title ?? session.title) === DEFAULT_SESSION_TITLE
+            ? summaryResult?.titleSuggestion ?? turnIntelligence.titleSuggestion ?? undefined
+            : undefined,
+        contextSummary: summaryResult?.contextSummary ?? buildContextSummary(recentMessageTexts),
       });
 
       const sessionSummary: ChatSessionSummary = {
@@ -383,13 +487,28 @@ export class ChatService {
         lastMessagePreview: aiResult.contentMarkdown,
         messageCount: 0,
         artifactCount: 0,
+        isUnread: summarizedSession.lastReadAt != null && summarizedSession.updatedAt > summarizedSession.lastReadAt,
       };
       callbacks?.onSessionUpdated?.(sessionSummary);
 
       const response: ChatAskResponse = {
         userMessage: mapMessage(userMessage),
         assistantMessage: mapMessage(finalAssistant),
-        ai: aiResult,
+        ai: {
+          ...aiResult,
+          confidenceScore: turnIntelligence.confidenceScore,
+          confidenceLevel:
+            turnIntelligence.confidenceScore == null
+              ? null
+              : turnIntelligence.confidenceScore >= 0.75
+                ? 'high'
+                : turnIntelligence.confidenceScore >= 0.5
+                  ? 'medium'
+                  : 'low',
+          subjectLabel: turnIntelligence.subjectLabel,
+          topicLabel: turnIntelligence.topicLabel,
+          levelLabel: turnIntelligence.levelLabel,
+        },
       };
 
       if (aiResult.finishReason === 'error') {

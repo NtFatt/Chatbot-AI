@@ -16,6 +16,7 @@ import { IconButton } from '../ui/IconButton';
 import { MaterialsPanel } from '../materials/MaterialsPanel';
 import { PromptStarterChips } from '../chat/PromptStarterChips';
 import { ProviderBadge } from '../chat/ProviderBadge';
+import type { AggregatedSource } from '../../hooks/use-session-sources';
 
 interface ContextDrawerProps {
   isOpen: boolean;
@@ -32,6 +33,7 @@ interface ContextDrawerProps {
   onSearchChange: (value: string) => void;
   onPromptSelect: (value: string) => void;
   onRetryMaterials?: () => void;
+  sessionSources?: AggregatedSource[];
 }
 
 export const ContextDrawer = ({
@@ -49,6 +51,7 @@ export const ContextDrawer = ({
   onSearchChange,
   onPromptSelect,
   onRetryMaterials,
+  sessionSources = [],
 }: ContextDrawerProps) => {
   const drawerRef = useRef<HTMLDivElement>(null);
 
@@ -92,12 +95,12 @@ export const ContextDrawer = ({
           <motion.aside
             ref={drawerRef}
             animate={{ x: 0 }}
-            className="fixed bottom-0 right-0 top-0 z-50 flex w-[400px] max-w-[94vw] flex-col overflow-hidden rounded-l-2xl border-l border-black/[0.05] bg-[rgba(255,255,255,0.96)] shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-[rgba(12,18,30,0.96)]"
+            className="fixed bottom-0 right-0 top-0 z-50 flex w-[416px] max-w-[94vw] flex-col overflow-hidden rounded-l-[26px] border-l border-black/[0.08] bg-[rgba(250,252,255,0.98)] shadow-[0_26px_90px_rgba(15,23,42,0.16)] backdrop-blur-xl dark:border-white/10 dark:bg-[rgba(12,18,30,0.97)]"
             exit={{ x: '100%' }}
             initial={{ x: '100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
           >
-            <div className="flex items-center justify-between border-b border-black/[0.05] px-4 py-3 dark:border-white/10">
+            <div className="flex items-center justify-between border-b border-black/[0.06] px-5 py-4 dark:border-white/10">
               <div className="flex items-center gap-2">
                 <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-ocean/10 text-ocean dark:bg-cyan/15 dark:text-cyan">
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -111,7 +114,7 @@ export const ContextDrawer = ({
                 </span>
                 <div>
                   <p className="text-sm font-semibold text-ink dark:text-slate-100">Learning Context</p>
-                  <p className="text-xs text-ink/50 dark:text-slate-500">
+                  <p className="text-xs leading-5 text-ink/62 dark:text-slate-400">
                     {currentSession?.title ?? 'No session'}
                   </p>
                 </div>
@@ -160,14 +163,14 @@ export const ContextDrawer = ({
                     />
                   </svg>
                 }
-                title="Recent Sources"
+                title="Nguồn mới nhất"
               >
                 {latestSources.length > 0 ? (
                   <div className="space-y-2">
                     {latestSources.map((source) => (
                       <a
                         key={source.id}
-                        className="focus-ring group flex items-start gap-3 rounded-xl border border-black/[0.05] bg-white/60 p-3 transition hover:border-black/[0.1] hover:bg-white/80 dark:border-white/10 dark:bg-slate-900/40 dark:hover:bg-slate-900/60"
+                        className="focus-ring surface-card-interactive group flex items-start gap-3 p-3.5"
                         href={source.url}
                         rel="noreferrer"
                         target="_blank"
@@ -176,7 +179,7 @@ export const ContextDrawer = ({
                           <p className="line-clamp-2 text-sm font-medium text-ink dark:text-slate-100">
                             {source.title}
                           </p>
-                          <p className="mt-1 text-xs text-ink/50 dark:text-slate-500">
+                          <p className="mt-1 text-xs leading-5 text-ink/60 dark:text-slate-400">
                             {source.subjectLabel}
                             {source.topicLabel ? ` · ${source.topicLabel}` : ''}
                           </p>
@@ -198,8 +201,70 @@ export const ContextDrawer = ({
                     ))}
                   </div>
                 ) : (
-                  <p className="rounded-xl border border-dashed border-black/[0.08] bg-black/[0.02] p-4 text-center text-xs text-ink/50 dark:border-white/10 dark:text-slate-500">
+                  <p className="rounded-2xl border border-dashed border-black/[0.08] bg-black/[0.02] p-4 text-center text-xs leading-5 text-ink/58 dark:border-white/10 dark:text-slate-500">
                     No sources used in recent responses
+                  </p>
+                )}
+              </CollapsibleSection>
+
+              <CollapsibleSection
+                badge={sessionSources.length}
+                defaultOpen={sessionSources.length > 0}
+                icon={
+                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                    />
+                  </svg>
+                }
+                title="Tài liệu đã dùng"
+              >
+                {sessionSources.length > 0 ? (
+                  <div className="space-y-2">
+                    {sessionSources.map((source) => (
+                      <a
+                        key={source.id}
+                        className="focus-ring surface-card-interactive group flex items-start gap-3 p-3.5"
+                        href={source.url}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="line-clamp-2 text-sm font-medium text-ink dark:text-slate-100">
+                            {source.title}
+                          </p>
+                          <p className="mt-1 text-xs leading-5 text-ink/60 dark:text-slate-400">
+                            {source.subjectLabel}
+                            {source.topicLabel ? ` · ${source.topicLabel}` : ''}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 flex-col items-end gap-1.5">
+                          <svg
+                            className="h-4 w-4 text-ink/30 transition group-hover:text-ocean dark:text-slate-600 dark:group-hover:text-cyan"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                            />
+                          </svg>
+                          <span className="rounded-full border border-ocean/20 bg-ocean/10 px-1.5 py-0.5 text-[10px] font-semibold text-ocean dark:border-cyan/20 dark:bg-cyan/12 dark:text-cyan">
+                            {source.usageCount} lần
+                          </span>
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="rounded-2xl border border-dashed border-black/[0.08] bg-black/[0.02] p-4 text-center text-xs leading-5 text-ink/58 dark:border-white/10 dark:text-slate-500">
+                    Chưa có tài liệu nào được dùng trong phiên này
                   </p>
                 )}
               </CollapsibleSection>

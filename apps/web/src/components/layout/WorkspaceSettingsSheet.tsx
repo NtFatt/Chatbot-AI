@@ -116,8 +116,8 @@ export const WorkspaceSettingsSheet = ({
         type="button"
       />
 
-      <aside className="relative flex h-full w-full max-w-[460px] flex-col border-l border-black/[0.06] bg-white/94 shadow-[0_24px_90px_rgba(15,23,42,0.16)] backdrop-blur-2xl dark:border-white/10 dark:bg-[rgba(2,6,23,0.9)]">
-        <div className="flex items-start justify-between gap-3 border-b border-black/[0.05] px-5 py-5 dark:border-white/10">
+      <aside className="relative flex h-full w-full max-w-[468px] flex-col border-l border-black/[0.08] bg-white/96 shadow-[0_28px_90px_rgba(15,23,42,0.16)] backdrop-blur-2xl dark:border-white/10 dark:bg-[rgba(2,6,23,0.92)]">
+        <div className="flex items-start justify-between gap-3 border-b border-black/[0.06] px-6 py-5 dark:border-white/10">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-black/[0.06] bg-white/82 dark:border-white/10 dark:bg-slate-900/55">
@@ -125,7 +125,7 @@ export const WorkspaceSettingsSheet = ({
               </span>
               <div>
                 <p className="font-display text-[22px] font-semibold tracking-[-0.04em]">Workspace settings</p>
-                <p className="mt-1 text-sm leading-6 text-ink/60 dark:text-slate-300">
+                <p className="mt-1 text-sm leading-6 text-ink/68 dark:text-slate-300">
                   Tinh gọn các điều khiển hệ thống để khu chat luôn tập trung vào học tập.
                 </p>
               </div>
@@ -137,13 +137,13 @@ export const WorkspaceSettingsSheet = ({
           </Button>
         </div>
 
-        <div className="app-scrollbar min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-5">
-          <section className="workspace-panel-subtle px-4 py-4">
+        <div className="app-scrollbar min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-5">
+          <section className="workspace-panel-subtle px-5 py-4.5">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="section-kicker">AI status</p>
                 <p className="mt-2 text-lg font-semibold">{overallAiState}</p>
-                <p className="mt-1 text-sm leading-6 text-ink/60 dark:text-slate-400">
+                <p className="mt-1 text-sm leading-6 text-ink/68 dark:text-slate-400">
                   {diagnostics?.realAiAvailable
                     ? 'Ít nhất một provider thật đang phản hồi được.'
                     : hasExternalProviders
@@ -165,13 +165,13 @@ export const WorkspaceSettingsSheet = ({
             </div>
           </section>
 
-          <section className="mt-4 workspace-panel-subtle px-4 py-4">
+          <section className="mt-4 workspace-panel-subtle px-5 py-4.5">
             <p className="section-kicker">Phiên hiện tại</p>
             {currentSession ? (
               <>
                 <div className="mt-3 flex gap-2">
                   <input
-                    className="focus-ring h-11 flex-1 rounded-[18px] border border-black/[0.08] bg-white/84 px-4 text-sm outline-none dark:border-white/10 dark:bg-slate-900/55 dark:text-slate-100"
+                    className="focus-ring h-11 flex-1 rounded-[18px] border border-black/[0.08] bg-white/92 px-4 text-sm outline-none dark:border-white/10 dark:bg-slate-900/55 dark:text-slate-100"
                     id="settings-session-title"
                     onChange={(event) => onDraftTitleChange(event.target.value)}
                     placeholder="Đặt tên gợi nhớ cho phiên học"
@@ -196,10 +196,10 @@ export const WorkspaceSettingsSheet = ({
                     {providerOptions.map((provider) => (
                       <button
                         className={cn(
-                          'focus-ring rounded-full border px-3.5 py-2 text-xs font-semibold transition',
-                          provider === activeProvider
-                            ? 'border-transparent bg-ink text-white dark:bg-white dark:text-ink'
-                            : 'border-black/[0.08] bg-white/84 text-ink/72 dark:border-white/10 dark:bg-slate-900/55 dark:text-slate-300',
+                        'focus-ring rounded-full border px-3.5 py-2 text-xs font-semibold transition',
+                        provider === activeProvider
+                            ? 'border-transparent bg-ocean text-white shadow-[0_10px_22px_rgba(15,139,141,0.18)] dark:bg-cyan dark:text-ink'
+                            : 'border-black/[0.08] bg-white/92 text-ink/72 hover:border-black/[0.12] hover:bg-white dark:border-white/10 dark:bg-slate-900/55 dark:text-slate-300 dark:hover:bg-slate-900/72',
                         )}
                         disabled={!currentSession}
                         data-testid={`provider-option-${provider}`}
@@ -211,47 +211,47 @@ export const WorkspaceSettingsSheet = ({
                       </button>
                     ))}
                   </div>
-                  <p className="mt-3 text-sm leading-6 text-ink/58 dark:text-slate-400">
+                  <p className="mt-3 text-sm leading-6 text-ink/66 dark:text-slate-400">
                     {providerDescriptions[activeProvider]}
                   </p>
                 </div>
               </>
             ) : (
-              <p className="mt-3 text-sm leading-6 text-ink/60 dark:text-slate-400">
+              <p className="mt-3 text-sm leading-6 text-ink/66 dark:text-slate-400">
                 Chọn một cuộc trò chuyện ở sidebar để đổi tên hoặc tuỳ chỉnh provider cho phiên đó.
               </p>
             )}
           </section>
 
           {usage ? (
-            <section className="mt-4 workspace-panel-subtle px-4 py-4">
+            <section className="mt-4 workspace-panel-subtle px-5 py-4.5">
               <p className="section-kicker">Usage phiên hiện tại</p>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-[18px] border border-black/[0.06] px-3 py-3 dark:border-white/10">
-                  <p className="text-xs uppercase tracking-[0.12em] text-ink/45 dark:text-slate-500">Requests</p>
+                <div className="surface-card px-3.5 py-3.5">
+                  <p className="text-xs uppercase tracking-[0.12em] text-ink/55 dark:text-slate-500">Requests</p>
                   <p className="mt-1 text-lg font-semibold">{usage.summary.requests}</p>
                 </div>
-                <div className="rounded-[18px] border border-black/[0.06] px-3 py-3 dark:border-white/10">
-                  <p className="text-xs uppercase tracking-[0.12em] text-ink/45 dark:text-slate-500">Tokens</p>
+                <div className="surface-card px-3.5 py-3.5">
+                  <p className="text-xs uppercase tracking-[0.12em] text-ink/55 dark:text-slate-500">Tokens</p>
                   <p className="mt-1 text-lg font-semibold">{usage.summary.tokens}</p>
                 </div>
-                <div className="rounded-[18px] border border-black/[0.06] px-3 py-3 dark:border-white/10">
-                  <p className="text-xs uppercase tracking-[0.12em] text-ink/45 dark:text-slate-500">Fallbacks</p>
+                <div className="surface-card px-3.5 py-3.5">
+                  <p className="text-xs uppercase tracking-[0.12em] text-ink/55 dark:text-slate-500">Fallbacks</p>
                   <p className="mt-1 text-lg font-semibold">{usage.summary.fallbacks}</p>
                 </div>
-                <div className="rounded-[18px] border border-black/[0.06] px-3 py-3 dark:border-white/10">
-                  <p className="text-xs uppercase tracking-[0.12em] text-ink/45 dark:text-slate-500">Estimated cost</p>
+                <div className="surface-card px-3.5 py-3.5">
+                  <p className="text-xs uppercase tracking-[0.12em] text-ink/55 dark:text-slate-500">Estimated cost</p>
                   <p className="mt-1 text-lg font-semibold">${usage.summary.cost.toFixed(4)}</p>
                 </div>
               </div>
             </section>
           ) : null}
 
-          <section className="mt-4 workspace-panel-subtle px-4 py-4">
+          <section className="mt-4 workspace-panel-subtle px-5 py-4.5">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="section-kicker">Diagnostics</p>
-                <p className="mt-2 text-sm leading-6 text-ink/60 dark:text-slate-400">
+                <p className="mt-2 text-sm leading-6 text-ink/66 dark:text-slate-400">
                   Kiểm tra readiness, độ trễ và sự cố gần đây của từng provider.
                 </p>
               </div>
@@ -271,33 +271,33 @@ export const WorkspaceSettingsSheet = ({
             />
           </section>
 
-          <section className="mt-4 grid gap-2">
+          <section className="mt-4 grid gap-3">
             <button
-              className="focus-ring flex items-center justify-between rounded-[20px] border border-black/[0.08] bg-white/84 px-4 py-3 text-left transition hover:border-black/[0.12] dark:border-white/10 dark:bg-slate-900/55"
+              className="focus-ring surface-card-interactive flex items-center justify-between px-4 py-3.5 text-left"
               onClick={onToggleTheme}
               type="button"
             >
               <div>
                 <p className="text-sm font-semibold">Giao diện</p>
-                <p className="mt-1 text-xs leading-5 text-ink/56 dark:text-slate-400">Đổi giữa chế độ sáng và tối.</p>
+                <p className="mt-1 text-xs leading-5 text-ink/60 dark:text-slate-400">Đổi giữa chế độ sáng và tối.</p>
               </div>
-              <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/[0.08] dark:border-white/10">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/[0.08] bg-white/92 dark:border-white/10 dark:bg-slate-900/55">
                 {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
               </span>
             </button>
 
             <button
-              className="focus-ring flex items-center justify-between rounded-[20px] border border-black/[0.08] bg-white/84 px-4 py-3 text-left transition hover:border-black/[0.12] dark:border-white/10 dark:bg-slate-900/55"
+              className="focus-ring surface-card-interactive flex items-center justify-between px-4 py-3.5 text-left"
               onClick={onLogout}
               type="button"
             >
               <div>
                 <p className="text-sm font-semibold">Thoát workspace</p>
-                <p className="mt-1 text-xs leading-5 text-ink/56 dark:text-slate-400">
+                <p className="mt-1 text-xs leading-5 text-ink/60 dark:text-slate-400">
                   Xóa phiên đăng nhập trên thiết bị hiện tại.
                 </p>
               </div>
-              <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/[0.08] dark:border-white/10">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/[0.08] bg-white/92 dark:border-white/10 dark:bg-slate-900/55">
                 <LogOut className="h-4 w-4" />
               </span>
             </button>

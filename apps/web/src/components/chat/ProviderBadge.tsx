@@ -18,8 +18,8 @@ export const ProviderBadge = ({
       className={cn(
         'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-medium',
         fallbackUsed
-          ? 'border-amber-500/18 bg-amber-500/[0.08] text-amber-700 dark:text-amber-300'
-          : 'border-black/[0.08] bg-black/[0.03] text-ink/72 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300',
+          ? 'border-amber-500/20 bg-amber-500/[0.1] text-amber-700 dark:text-amber-300'
+          : 'border-black/[0.08] bg-white/88 text-ink/74 shadow-[0_3px_10px_rgba(15,23,42,0.03)] dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300',
       )}
     >
       {fallbackUsed ? <ShieldAlert className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}
