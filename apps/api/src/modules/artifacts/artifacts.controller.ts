@@ -56,6 +56,37 @@ export const createArtifactsController = (artifactsService: ArtifactsService) =>
     return success(req, res, artifact);
   }),
 
+  updateContent: asyncHandler(async (req, res) => {
+    const params = (req.validated?.params as typeof req.params) ?? req.params;
+    const body = (req.validated?.body as typeof req.body) ?? req.body;
+    const artifact = await artifactsService.updateContent(
+      req.auth!.userId,
+      String(params.id),
+      body,
+    );
+    return success(req, res, artifact);
+  }),
+
+  refine: asyncHandler(async (req, res) => {
+    const params = (req.validated?.params as typeof req.params) ?? req.params;
+    const body = (req.validated?.body as typeof req.body) ?? req.body;
+    const artifact = await artifactsService.refine(req.auth!.userId, String(params.id), body);
+    return success(req, res, artifact);
+  }),
+
+  recordReviewEvent: asyncHandler(async (req, res) => {
+    const params = (req.validated?.params as typeof req.params) ?? req.params;
+    const body = (req.validated?.body as typeof req.body) ?? req.body;
+    const event = await artifactsService.recordReviewEvent(req.auth!.userId, String(params.id), body);
+    return success(req, res, event, 201);
+  }),
+
+  listReviewHistory: asyncHandler(async (req, res) => {
+    const params = (req.validated?.params as typeof req.params) ?? req.params;
+    const history = await artifactsService.listReviewHistory(req.auth!.userId, String(params.id));
+    return success(req, res, { items: history, total: history.length });
+  }),
+
   exportMarkdown: asyncHandler(async (req, res) => {
     const params = (req.validated?.params as typeof req.params) ?? req.params;
     const payload = await artifactsService.exportMarkdown(req.auth!.userId, String(params.id));

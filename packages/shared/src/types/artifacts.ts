@@ -1,4 +1,13 @@
 export type ArtifactType = 'summary' | 'flashcard_set' | 'quiz_set' | 'note';
+export type ArtifactRefineInstruction =
+  | 'make_easier'
+  | 'make_harder'
+  | 'add_examples'
+  | 'shorten'
+  | 'expand'
+  | 'fix_accuracy'
+  | 'custom';
+export type ReviewSelfAssessment = 'again' | 'hard' | 'good' | 'easy';
 
 export interface FlashcardCard {
   front: string;
@@ -23,6 +32,20 @@ export interface NoteContent {
 }
 
 export type ArtifactContent = FlashcardCard[] | QuizQuestion[] | SummaryContent | NoteContent;
+
+export interface ArtifactContentUpdateInput {
+  content: ArtifactContent;
+}
+
+export interface ArtifactRefineInput {
+  instruction: ArtifactRefineInstruction;
+  customInstruction?: string;
+}
+
+export interface ArtifactReviewEventInput {
+  itemIndex?: number;
+  selfAssessment: ReviewSelfAssessment;
+}
 
 export interface StudyArtifact {
   id: string;
@@ -89,4 +112,13 @@ export interface PublicStudyArtifact {
   content: ArtifactContent;
   qualityScore: number | null;
   createdAt: string;
+}
+
+export interface ReviewHistory {
+  id: string;
+  userId: string;
+  artifactId: string;
+  itemIndex: number;
+  selfAssessment: ReviewSelfAssessment;
+  reviewedAt: string;
 }

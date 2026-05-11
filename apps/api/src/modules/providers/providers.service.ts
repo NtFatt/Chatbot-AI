@@ -14,6 +14,7 @@ import { prisma } from '../../config/prisma';
 import { env } from '../../config/env';
 import type { AIProvider } from '../../integrations/ai/ai.types';
 import { ProviderHealthService } from '../../integrations/ai/provider-health.service';
+import type { ModelRegistryService } from '../model-registry/model-registry.service';
 
 type RuntimeSource = 'db' | 'env' | 'default';
 
@@ -23,6 +24,7 @@ export interface ProviderDescriptor {
   configured: boolean;
   isPrimary: boolean;
   model: string;
+  modelVersionId: string | null;
   timeoutMs: number;
   maxRetries: number;
   healthState: ProviderHealthState;
@@ -53,24 +55,33 @@ const providerKeyToEnv = (provider: ProviderKey) =>
       };
 
 export class ProvidersService {
-  constructor(private readonly providerHealthService: ProviderHealthService) {}
+  constructor(
+    private readonly providerHealthService: ProviderHealthService,
+    private readonly modelRegistryService?: ModelRegistryService,
+  ) {}
 
   private async readDescriptors() {
     const dbConfigs = await prisma.aiProviderConfig.findMany();
     const byKey = new Map(dbConfigs.map((item) => [item.provider as ProviderKey, item]));
 
-    const providers = PROVIDER_KEYS.map((key) => {
+    const providers = await Promise.all(PROVIDER_KEYS.map(async (key) => {
       const envConfig = providerKeyToEnv(key);
       const dbConfig = byKey.get(key);
       const health = this.providerHealthService.snapshot(key);
       const envApiKey = envConfig.apiKey.trim();
+      const activeModel = await this.modelRegistryService?.getActiveModelForRuntime(key);
 
       return {
         key,
         enabled: dbConfig?.enabled ?? envConfig.enabled ?? true,
         configured: envApiKey.length > 0,
         isPrimary: dbConfig?.isPrimary ?? env.AI_PRIMARY_PROVIDER === key,
-        model: dbConfig?.model ?? envConfig.model ?? PROVIDER_DEFAULT_MODELS[key],
+        model:
+          activeModel?.model ??
+          dbConfig?.model ??
+          envConfig.model ??
+          PROVIDER_DEFAULT_MODELS[key],
+        modelVersionId: activeModel?.modelVersionId ?? null,
         timeoutMs: dbConfig?.timeoutMs ?? envConfig.timeoutMs ?? 25_000,
         maxRetries: dbConfig?.maxRetries ?? env.AI_REQUEST_RETRY_COUNT,
         healthState: health.state,
@@ -81,7 +92,7 @@ export class ProvidersService {
             ? 'env'
             : 'default',
       } satisfies ProviderDescriptor;
-    });
+    }));
 
     return providers;
   }

@@ -1,8 +1,8 @@
 import { Suspense, lazy, startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { ArtifactGenerateType, ArtifactType, ChatMessage, ChatSessionSummary, ProviderKey, StudyArtifact } from '@chatbot-ai/shared';
+import type { ArtifactContent, ArtifactGenerateType, ArtifactType, ChatMessage, ChatSessionSummary, ProviderKey, ReviewSelfAssessment, StudyArtifact } from '@chatbot-ai/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BarChart3, Library, Menu, Settings2 } from 'lucide-react';
+import { BarChart3, Library, Menu, Settings2, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -39,8 +39,11 @@ import {
   fetchArtifacts,
   fetchSessionArtifacts,
   generateArtifact,
+  recordArtifactReviewEvent,
+  refineArtifact,
   revokeArtifactShareLink,
   toggleFavorite,
+  updateArtifactContent,
 } from '../../services/artifacts-service';
 import { logout } from '../../services/auth-service';
 import { fetchLearningInsights } from '../../services/insights-service';
@@ -746,6 +749,58 @@ export const DashboardPage = () => {
     },
   });
 
+  const saveArtifactContentMutation = useMutation({
+    mutationFn: ({
+      artifactId,
+      content,
+    }: {
+      artifactId: string;
+      content: ArtifactContent;
+    }) =>
+      updateArtifactContent(artifactId, {
+        content,
+      }),
+    onSuccess: () => {
+      invalidateArtifactQueries();
+      toast.success('Artifact updated');
+    },
+  });
+
+  const refineArtifactMutation = useMutation({
+    mutationFn: ({
+      artifactId,
+      instruction,
+      customInstruction,
+    }: {
+      artifactId: string;
+      instruction: 'make_easier' | 'make_harder' | 'add_examples' | 'shorten' | 'expand' | 'fix_accuracy' | 'custom';
+      customInstruction?: string;
+    }) =>
+      refineArtifact(artifactId, {
+        instruction,
+        customInstruction,
+      }),
+    onSuccess: () => {
+      invalidateArtifactQueries();
+      toast.success('Artifact refined');
+    },
+  });
+  const recordArtifactReviewEventMutation = useMutation({
+    mutationFn: ({
+      artifactId,
+      itemIndex,
+      selfAssessment,
+    }: {
+      artifactId: string;
+      itemIndex: number;
+      selfAssessment: ReviewSelfAssessment;
+    }) =>
+      recordArtifactReviewEvent(artifactId, {
+        itemIndex,
+        selfAssessment,
+      }),
+  });
+
   useEffect(() => {
     if (!selectedSessionId && sessions.length > 0) {
       startTransition(() => {
@@ -871,6 +926,27 @@ export const DashboardPage = () => {
 
   const handleOpenInsightsDrawer = () => {
     setInsightsOpen(true);
+  };
+  const handleOpenAiLab = () => {
+    void navigate('/app/ai-lab');
+  };
+
+  const handleRecordArtifactReviewEvent = async (
+    artifact: StudyArtifact,
+    itemIndex: number,
+    selfAssessment: ReviewSelfAssessment,
+  ) => {
+    try {
+      await recordArtifactReviewEventMutation.mutateAsync({
+        artifactId: artifact.id,
+        itemIndex,
+        selfAssessment,
+      });
+    } catch (error) {
+      const info = getTransportErrorInfo(error, 'Could not save review feedback.');
+      toast.error(info.message, { description: info.description });
+      throw error;
+    }
   };
   const activationGuide = showActivationGuide ? (
     <WorkspaceActivationGuide
@@ -1024,6 +1100,12 @@ export const DashboardPage = () => {
               onClick={handleOpenInsightsDrawer}
               size="sm"
               tooltip="Learning insights"
+            />
+            <IconButton
+              icon={<Sparkles className="h-4 w-4" />}
+              onClick={handleOpenAiLab}
+              size="sm"
+              tooltip="AI lab"
             />
             <IconButton
               data-testid="open-settings"
@@ -1244,11 +1326,26 @@ export const DashboardPage = () => {
             onExport={handleExportArtifact}
             onFilterChange={setArtifactFilter}
             onModeChange={handleArtifactModeChange}
+            onRefine={(artifact, input) =>
+              refineArtifactMutation.mutate({
+                artifactId: artifact.id,
+                instruction: input.instruction,
+                customInstruction: input.customInstruction,
+              })
+            }
             onRevokeShare={handleRevokeArtifactShare}
+            onSaveContent={(artifact, content) =>
+              saveArtifactContentMutation.mutate({
+                artifactId: artifact.id,
+                content,
+              })
+            }
             onShare={handleShareArtifact}
             onStartQuizReview={setQuizReviewArtifact}
             onToggleFavorite={(id) => toggleFavoriteMutation.mutate(id)}
+            refiningArtifactId={refineArtifactMutation.isPending ? refineArtifactMutation.variables?.artifactId ?? null : null}
             revokingArtifactId={revokeShareMutation.isPending ? revokeShareMutation.variables ?? null : null}
+            savingArtifactId={saveArtifactContentMutation.isPending ? saveArtifactContentMutation.variables?.artifactId ?? null : null}
             sessionCount={artifactWorkspace.sessionCount}
             sharingArtifactId={shareArtifactMutation.isPending ? shareArtifactMutation.variables ?? null : null}
           />
@@ -1284,6 +1381,9 @@ export const DashboardPage = () => {
               <QuizReviewMode
                 artifact={quizReviewArtifact}
                 onBack={() => setQuizReviewArtifact(null)}
+                onRecordReviewEvent={({ artifact, itemIndex, selfAssessment }) =>
+                  handleRecordArtifactReviewEvent(artifact, itemIndex, selfAssessment)
+                }
               />
             </Suspense>
           </div>

@@ -13,6 +13,9 @@ const LoginPage = lazy(() =>
 const PublicArtifactPage = lazy(() =>
   import('../features/public/PublicArtifactPage').then((module) => ({ default: module.PublicArtifactPage })),
 );
+const AiLabPage = lazy(() =>
+  import('../features/ai-lab/AiLabPage').then((module) => ({ default: module.AiLabPage })),
+);
 
 const RouteLoader = ({ title, description }: { title: string; description?: string }) => (
   <div className="flex min-h-screen items-center justify-center px-4">
@@ -95,6 +98,18 @@ export const router = createBrowserRouter([
           <DashboardPage />,
           'Đang mở không gian học tập...',
           'Hệ thống đang tải các công cụ chat, artifact workspace, và bối cảnh học tập của bạn.',
+        )}
+      </AppGate>
+    ),
+  },
+  {
+    path: '/app/ai-lab',
+    element: (
+      <AppGate>
+        {renderLazyRoute(
+          <AiLabPage />,
+          'Đang mở AI lab...',
+          'Workspace đang tải dataset manager, eval harness, và model registry.',
         )}
       </AppGate>
     ),

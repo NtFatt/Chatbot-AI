@@ -12,6 +12,13 @@ export const queryKeys = {
   providerDiagnostics: ['providers-diagnostics'] as const,
   providerMetrics: ['providers-metrics'] as const,
   providerIncidents: ['providers-incidents'] as const,
+  trainingDatasets: ['training-datasets'] as const,
+  trainingExamples: (datasetId: string | null) => ['training-examples', datasetId ?? 'none'] as const,
+  trainingJobs: ['training-jobs'] as const,
+  evalCases: ['eval-cases'] as const,
+  evalRuns: ['eval-runs'] as const,
+  modelVersions: ['model-versions'] as const,
+  activeModels: ['active-models'] as const,
   learningInsights: ['learning-insights'] as const,
   usage: (sessionId?: string | null) => ['chat-usage', sessionId ?? 'all'] as const,
   recommendations: (sessionId: string, query: string) =>

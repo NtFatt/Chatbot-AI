@@ -11,10 +11,10 @@ import {
 } from '@chatbot-ai/shared';
 import { parse } from 'dotenv';
 import { z } from 'zod';
+import { resolveEnvPaths } from './env-paths';
 
 const envDir = path.dirname(fileURLToPath(import.meta.url));
-const apiEnvPath = path.resolve(envDir, '../../.env');
-const rootEnvPath = path.resolve(envDir, '../../../.env');
+const { apiEnvPath, rootEnvPath } = resolveEnvPaths(envDir);
 
 const loadEnvFile = (targetPath: string) => {
   if (!fs.existsSync(targetPath)) {
@@ -31,7 +31,9 @@ const loadEnvFile = (targetPath: string) => {
 
 // Precedence: shell env > apps/api/.env > repo-root .env fallback.
 loadEnvFile(apiEnvPath);
-loadEnvFile(rootEnvPath);
+if (rootEnvPath) {
+  loadEnvFile(rootEnvPath);
+}
 
 const booleanish = z
   .string()

@@ -1,18 +1,23 @@
 import {
   artifactContentSchemasByType,
+  buildStructuredArtifactRefinePrompt,
+  type ArtifactReviewEventInput,
   buildArtifactSystemPrompt,
   buildArtifactUserPrompt,
   buildStructuredArtifactSystemPrompt,
   buildStructuredArtifactUserPrompt,
+  type ArtifactContentUpdateInput,
   structuredArtifactJsonSchemasByType,
   structuredArtifactSchemasByType,
   type ArtifactContent,
   type ArtifactExportPayload,
   type ArtifactGenerateType,
+  type ArtifactRefineInput,
   type ArtifactSearchResult,
   type ArtifactSharePayload,
   type ArtifactShareRevokePayload,
   type PublicStudyArtifact,
+  type ReviewHistory,
   type StudyArtifact,
 } from '@chatbot-ai/shared';
 import { Prisma, type ArtifactType } from '@prisma/client';
@@ -73,6 +78,11 @@ type ResolvedSourceContent = {
   sourceReason: string | null;
 };
 
+type ResolvedArtifactProvider = {
+  providersState: Awaited<ReturnType<ProvidersService['listProviders']>>;
+  sessionProvider: 'GEMINI' | 'OPENAI';
+};
+
 type ArtifactRecordWithOptionalSession = {
   id: string;
   userId: string;
@@ -87,6 +97,15 @@ type ArtifactRecordWithOptionalSession = {
   qualityScore: number | null;
   createdAt: Date;
   updatedAt: Date;
+};
+
+type ReviewHistoryRecord = {
+  id: string;
+  userId: string;
+  artifactId: string;
+  itemIndex: number;
+  selfAssessment: 'again' | 'hard' | 'good' | 'easy';
+  reviewedAt: Date;
 };
 
 function extractSearchPreview(content: unknown, type: ArtifactType): string {
@@ -188,6 +207,17 @@ export class ArtifactsService {
     };
   }
 
+  private mapReviewHistory(review: ReviewHistoryRecord): ReviewHistory {
+    return {
+      id: review.id,
+      userId: review.userId,
+      artifactId: review.artifactId,
+      itemIndex: review.itemIndex,
+      selfAssessment: review.selfAssessment,
+      reviewedAt: toIso(review.reviewedAt),
+    };
+  }
+
   private buildShareToken() {
     return randomBytes(24).toString('base64url');
   }
@@ -250,6 +280,79 @@ export class ArtifactsService {
       title: sourceContent.slice(0, 60).replace(/\n/g, ' ').trim() || 'Untitled',
       sourceDegraded: false,
       sourceReason: null,
+    };
+  }
+
+  private validateArtifactContent(type: ArtifactType, content: unknown): ArtifactContent {
+    const parsed = artifactContentSchemasByType[type].safeParse(content);
+    if (!parsed.success) {
+      throw new AppError(
+        400,
+        'INVALID_ARTIFACT_CONTENT',
+        'Artifact content does not match the expected structure for this artifact type.',
+        parsed.error.flatten(),
+      );
+    }
+
+    return parsed.data as ArtifactContent;
+  }
+
+  private resolveReviewItemIndex(
+    type: ArtifactType,
+    content: ArtifactContent,
+    itemIndex?: number,
+  ): number {
+    if (type === 'flashcard_set' || type === 'quiz_set') {
+      if (itemIndex == null) {
+        throw new AppError(
+          400,
+          'ARTIFACT_REVIEW_ITEM_INDEX_REQUIRED',
+          'itemIndex is required for flashcard and quiz review events.',
+        );
+      }
+
+      const itemCount = Array.isArray(content) ? content.length : 0;
+      if (itemIndex < 0 || itemIndex >= itemCount) {
+        throw new AppError(
+          400,
+          'ARTIFACT_REVIEW_ITEM_INDEX_INVALID',
+          'itemIndex is outside the available artifact item range.',
+          { itemIndex, itemCount },
+        );
+      }
+
+      return itemIndex;
+    }
+
+    if (itemIndex == null) {
+      return 0;
+    }
+
+    if (itemIndex !== 0) {
+      throw new AppError(
+        400,
+        'ARTIFACT_REVIEW_ITEM_INDEX_INVALID',
+        'Summary and note review events must use itemIndex 0.',
+        { itemIndex },
+      );
+    }
+
+    return 0;
+  }
+
+  private async resolveArtifactProvider(
+    userId: string,
+    sessionId?: string | null,
+  ): Promise<ResolvedArtifactProvider> {
+    const providersState = await this.providersService.listProviders();
+    const sessionProvider =
+      sessionId
+        ? (await this.chatRepository.findSessionById(sessionId, userId))?.providerPreference
+        : null;
+
+    return {
+      providersState,
+      sessionProvider: sessionProvider ?? providersState.defaultProvider,
     };
   }
 
@@ -357,6 +460,25 @@ export class ArtifactsService {
     };
   }
 
+  private parseLegacyArtifactRefinement(
+    type: ArtifactGenerateType,
+    rawText: string,
+  ): StructuredArtifactEnvelope {
+    const cleaned = rawText
+      .trim()
+      .replace(/^```json\s*/i, '')
+      .replace(/```\s*$/i, '')
+      .trim();
+
+    const parsedJson = JSON.parse(cleaned) as unknown;
+    const parsedEnvelope = structuredArtifactSchemasByType[type].safeParse(parsedJson);
+    if (parsedEnvelope.success) {
+      return parsedEnvelope.data;
+    }
+
+    return this.parseLegacyArtifactContent(type, rawText);
+  }
+
   private async callArtifactAI(input: {
     userId: string;
     sessionId: string | null;
@@ -365,18 +487,17 @@ export class ArtifactsService {
     content: string;
     language: string;
   }): Promise<ArtifactGenerationResult> {
-    const providersState = await this.providersService.listProviders();
-    const sessionProvider =
-      input.sessionId
-        ? (await this.chatRepository.findSessionById(input.sessionId, input.userId))?.providerPreference
-        : null;
+    const { providersState, sessionProvider } = await this.resolveArtifactProvider(
+      input.userId,
+      input.sessionId,
+    );
 
     try {
       const result = await this.structuredOutputService.generate({
         userId: input.userId,
         sessionId: input.sessionId,
         messageId: input.messageId,
-        sessionProvider: sessionProvider ?? providersState.defaultProvider,
+        sessionProvider,
         schemaName: `artifact_${input.type}`,
         schemaDescription: `Structured study artifact payload for ${input.type}.`,
         schema: structuredArtifactSchemasByType[input.type] as z.ZodType<StructuredArtifactEnvelope>,
@@ -594,6 +715,154 @@ export class ArtifactsService {
   async listFavorites(userId: string): Promise<StudyArtifact[]> {
     const artifacts = await this.artifactsRepository.listFavorites(userId);
     return artifacts.map((a) => this.mapArtifact(a));
+  }
+
+  async updateContent(
+    userId: string,
+    artifactId: string,
+    input: ArtifactContentUpdateInput,
+  ): Promise<StudyArtifact> {
+    const artifact = await this.artifactsRepository.findById(artifactId, userId);
+    if (!artifact) {
+      throw new AppError(404, 'ARTIFACT_NOT_FOUND', 'Artifact not found.');
+    }
+
+    const content = this.validateArtifactContent(artifact.type, input.content);
+    const updated = await this.artifactsRepository.updateContent(artifactId, userId, {
+      content: content as object,
+    });
+
+    logger.info(
+      {
+        artifactId,
+        userId,
+        artifactType: artifact.type,
+      },
+      'Artifact content updated manually',
+    );
+
+    return this.mapArtifact(updated);
+  }
+
+  async refine(
+    userId: string,
+    artifactId: string,
+    input: ArtifactRefineInput,
+  ): Promise<StudyArtifact> {
+    const artifact = await this.artifactsRepository.findById(artifactId, userId);
+    if (!artifact) {
+      throw new AppError(404, 'ARTIFACT_NOT_FOUND', 'Artifact not found.');
+    }
+
+    const currentContent = this.validateArtifactContent(artifact.type, artifact.content);
+    const language = await this.getUserLanguage(userId);
+    const { sessionProvider } = await this.resolveArtifactProvider(userId, artifact.sessionId);
+
+    const refined = await this.structuredOutputService.generate({
+      userId,
+      sessionId: artifact.sessionId,
+      messageId: artifact.messageId,
+      sessionProvider,
+      schemaName: `artifact_refine_${artifact.type}`,
+      schemaDescription: `Refined study artifact payload for ${artifact.type}.`,
+      schema: structuredArtifactSchemasByType[artifact.type] as z.ZodType<StructuredArtifactEnvelope>,
+      jsonSchema: structuredArtifactJsonSchemasByType[artifact.type],
+      systemPrompt: buildStructuredArtifactSystemPrompt(),
+      messages: [
+        {
+          role: 'user',
+          content: buildStructuredArtifactRefinePrompt({
+            type: artifact.type,
+            language,
+            currentContent,
+            instruction: input.instruction,
+            customInstruction: input.customInstruction,
+          }),
+        },
+      ],
+      legacyFallback: {
+        systemPrompt: buildArtifactSystemPrompt(),
+        messages: [
+          {
+            role: 'user',
+            content: buildStructuredArtifactRefinePrompt({
+              type: artifact.type,
+              language,
+              currentContent,
+              instruction: input.instruction,
+              customInstruction: input.customInstruction,
+            }),
+          },
+        ],
+        parse: (text) => this.parseLegacyArtifactRefinement(artifact.type, text),
+      },
+    });
+
+    const updated = await this.artifactsRepository.updateContent(artifactId, userId, {
+      content: refined.data.content as object,
+      qualityScore:
+        refined.data.qualityScore != null
+          ? refined.data.qualityScore
+          : undefined,
+    });
+
+    logger.info(
+      {
+        artifactId,
+        userId,
+        artifactType: artifact.type,
+        instruction: input.instruction,
+        provider: refined.provider,
+        model: refined.model,
+        qualityScore: refined.data.qualityScore,
+      },
+      'Artifact refined with AI',
+    );
+
+    return this.mapArtifact(updated);
+  }
+
+  async recordReviewEvent(
+    userId: string,
+    artifactId: string,
+    input: ArtifactReviewEventInput,
+  ): Promise<ReviewHistory> {
+    const artifact = await this.artifactsRepository.findById(artifactId, userId);
+    if (!artifact) {
+      throw new AppError(404, 'ARTIFACT_NOT_FOUND', 'Artifact not found.');
+    }
+
+    const content = this.validateArtifactContent(artifact.type, artifact.content);
+    const itemIndex = this.resolveReviewItemIndex(artifact.type, content, input.itemIndex);
+    const event = await this.artifactsRepository.createReviewHistory({
+      userId,
+      artifactId,
+      itemIndex,
+      selfAssessment: input.selfAssessment,
+    });
+
+    logger.info(
+      {
+        artifactId,
+        userId,
+        artifactType: artifact.type,
+        itemIndex,
+        selfAssessment: input.selfAssessment,
+      },
+      'Artifact review event recorded',
+    );
+
+    return this.mapReviewHistory(event);
+  }
+
+  async listReviewHistory(userId: string, artifactId: string): Promise<ReviewHistory[]> {
+    const artifact = await this.artifactsRepository.findById(artifactId, userId);
+    if (!artifact) {
+      throw new AppError(404, 'ARTIFACT_NOT_FOUND', 'Artifact not found.');
+    }
+
+    const rows = await this.artifactsRepository.listReviewHistory(artifactId);
+    return rows.map((row) => this.mapReviewHistory(row));
   }
 
   async toggleFavorite(userId: string, artifactId: string): Promise<StudyArtifact> {

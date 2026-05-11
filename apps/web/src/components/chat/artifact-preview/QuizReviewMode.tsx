@@ -8,7 +8,7 @@ import {
   XCircle,
 } from 'lucide-react';
 
-import type { QuizQuestion, StudyArtifact } from '@chatbot-ai/shared';
+import type { QuizQuestion, ReviewSelfAssessment, StudyArtifact } from '@chatbot-ai/shared';
 
 import { cn } from '../../../utils/cn';
 import { QuizItem } from './ArtifactPreviewContent';
@@ -16,15 +16,29 @@ import { QuizItem } from './ArtifactPreviewContent';
 interface QuizReviewModeProps {
   artifact: StudyArtifact;
   onBack: () => void;
+  onRecordReviewEvent?: (input: {
+    artifact: StudyArtifact;
+    itemIndex: number;
+    selfAssessment: ReviewSelfAssessment;
+  }) => Promise<void> | void;
 }
 
-export const QuizReviewMode = ({ artifact, onBack }: QuizReviewModeProps) => {
+const reviewAssessmentOptions: Array<{ value: ReviewSelfAssessment; label: string }> = [
+  { value: 'again', label: 'Again' },
+  { value: 'hard', label: 'Hard' },
+  { value: 'good', label: 'Good' },
+  { value: 'easy', label: 'Easy' },
+];
+
+export const QuizReviewMode = ({ artifact, onBack, onRecordReviewEvent }: QuizReviewModeProps) => {
   const questions = artifact.content as QuizQuestion[];
   const totalQuestions = questions.length;
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [revealedQuestions, setRevealedQuestions] = useState<Set<number>>(new Set());
+  const [reviewAssessments, setReviewAssessments] = useState<Record<number, ReviewSelfAssessment>>({});
+  const [pendingReviewIndex, setPendingReviewIndex] = useState<number | null>(null);
   const [showSummary, setShowSummary] = useState(false);
 
   const currentQuestion = questions[currentIndex];
@@ -61,8 +75,33 @@ export const QuizReviewMode = ({ artifact, onBack }: QuizReviewModeProps) => {
   const handleRetake = () => {
     setAnswers({});
     setRevealedQuestions(new Set());
+    setReviewAssessments({});
+    setPendingReviewIndex(null);
     setCurrentIndex(0);
     setShowSummary(false);
+  };
+
+  const handleRecordReview = async (selfAssessment: ReviewSelfAssessment) => {
+    if (pendingReviewIndex === currentIndex) {
+      return;
+    }
+
+    if (!onRecordReviewEvent) {
+      setReviewAssessments((previous) => ({ ...previous, [currentIndex]: selfAssessment }));
+      return;
+    }
+
+    setPendingReviewIndex(currentIndex);
+    try {
+      await onRecordReviewEvent({
+        artifact,
+        itemIndex: currentIndex,
+        selfAssessment,
+      });
+      setReviewAssessments((previous) => ({ ...previous, [currentIndex]: selfAssessment }));
+    } finally {
+      setPendingReviewIndex((previous) => (previous === currentIndex ? null : previous));
+    }
   };
 
   const score = Object.entries(answers).reduce((total, [questionIndex, answerIndex]) => {
@@ -180,8 +219,50 @@ export const QuizReviewMode = ({ artifact, onBack }: QuizReviewModeProps) => {
         onSelectAnswer={handleSelectAnswer}
         question={currentQuestion!}
         revealed={revealedQuestions.has(currentIndex)}
-        selectedAnswer={answers[currentIndex]}
+        selectedAnswer={answers[currentIndex] ?? null}
       />
+
+      {revealedQuestions.has(currentIndex) ? (
+        <div
+          className="rounded-xl border border-black/[0.05] bg-white/50 p-3 dark:border-white/10 dark:bg-slate-900/30"
+          data-testid={`quiz-review-feedback-${currentIndex}`}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink/45 dark:text-slate-500">
+              Review confidence
+            </p>
+            {reviewAssessments[currentIndex] ? (
+              <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                Saved: {reviewAssessments[currentIndex]}
+              </span>
+            ) : null}
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {reviewAssessmentOptions.map((option) => {
+              const isSelected = reviewAssessments[currentIndex] === option.value;
+              const isPending = pendingReviewIndex === currentIndex;
+              return (
+                <button
+                  aria-label={`Mark question ${currentIndex + 1} as ${option.label}`}
+                  className={cn(
+                    'focus-ring rounded-lg border px-3 py-2 text-xs font-semibold transition',
+                    isSelected
+                      ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-600 dark:border-emerald-400/25 dark:bg-emerald-400/10 dark:text-emerald-400'
+                      : 'border-black/[0.08] bg-white/82 text-ink/70 hover:bg-white dark:border-white/10 dark:bg-slate-950/40 dark:text-slate-300 dark:hover:bg-slate-950/70',
+                  )}
+                  data-testid={`quiz-review-mark-${option.value}`}
+                  disabled={isPending}
+                  key={option.value}
+                  onClick={() => void handleRecordReview(option.value)}
+                  type="button"
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
 
       <div className="flex gap-2">
         <button

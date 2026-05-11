@@ -23,12 +23,22 @@ import { createUsageRoutes } from './modules/usage/usage.routes';
 import { UsageService } from './modules/usage/usage.service';
 import { createInsightsRoutes } from './modules/insights/insights.routes';
 import { InsightsService } from './modules/insights/insights.service';
+import { EvalsRepository } from './modules/evals/evals.repository';
+import { EvalsService } from './modules/evals/evals.service';
+import { createEvalsRoutes } from './modules/evals/evals.routes';
+import { ModelRegistryRepository } from './modules/model-registry/model-registry.repository';
+import { ModelRegistryService } from './modules/model-registry/model-registry.service';
+import { createModelRegistryRoutes } from './modules/model-registry/model-registry.routes';
 import { ArtifactsRepository } from './modules/artifacts/artifacts.repository';
 import { ArtifactsService } from './modules/artifacts/artifacts.service';
 import { createArtifactsRoutes, createPublicArtifactsRoutes } from './modules/artifacts/artifacts.routes';
+import { TrainingRepository } from './modules/training/training.repository';
+import { TrainingService } from './modules/training/training.service';
+import { createTrainingRoutes } from './modules/training/training.routes';
 import { GeminiAdapter } from './integrations/ai/adapters/gemini.adapter';
 import { OpenAIAdapter } from './integrations/ai/adapters/openai.adapter';
 import { AIOrchestratorService } from './integrations/ai/ai-orchestrator.service';
+import { ModelGatewayService } from './integrations/ai/model-gateway.service';
 import { ProviderHealthService } from './integrations/ai/provider-health.service';
 import { StructuredOutputService } from './integrations/ai/structured-output.service';
 import { RetrievalService } from './integrations/retrieval/retrieval.service';
@@ -49,7 +59,9 @@ export const createApp = () => {
   const providerHealthService = new ProviderHealthService();
   const usageService = new UsageService();
   const insightsService = new InsightsService();
-  const providersService = new ProvidersService(providerHealthService);
+  const modelRegistryRepository = new ModelRegistryRepository();
+  const modelRegistryService = new ModelRegistryService(modelRegistryRepository);
+  const providersService = new ProvidersService(providerHealthService, modelRegistryService);
   const providerClients = {
     GEMINI: env.GEMINI_API_KEY ? new GeminiAdapter(env.GEMINI_API_KEY) : null,
     OPENAI: env.OPENAI_API_KEY ? new OpenAIAdapter(env.OPENAI_API_KEY) : null,
@@ -61,6 +73,12 @@ export const createApp = () => {
     usageService,
   );
   const structuredOutputService = new StructuredOutputService(
+    providersService,
+    providerClients,
+    providerHealthService,
+    usageService,
+  );
+  const modelGatewayService = new ModelGatewayService(
     providersService,
     providerClients,
     providerHealthService,
@@ -82,6 +100,15 @@ export const createApp = () => {
     structuredOutputService,
     authService,
     chatRepository,
+  );
+  const trainingRepository = new TrainingRepository();
+  const trainingService = new TrainingService(trainingRepository, modelRegistryService);
+  const evalsRepository = new EvalsRepository();
+  const evalsService = new EvalsService(
+    evalsRepository,
+    providersService,
+    modelRegistryService,
+    modelGatewayService,
   );
 
   app.disable('x-powered-by');
@@ -156,6 +183,9 @@ export const createApp = () => {
   app.use('/api/materials', materialsLimiter, createMaterialsRoutes(materialsService));
   app.use('/api/public/artifacts', createPublicArtifactsRoutes(artifactsService));
   app.use('/api/artifacts', createArtifactsRoutes(artifactsService));
+  app.use('/api/training', createTrainingRoutes(trainingService));
+  app.use('/api/evals', createEvalsRoutes(evalsService));
+  app.use('/api/models', createModelRegistryRoutes(modelRegistryService));
   app.use('/api/providers', createProvidersRoutes(providersService, providerClients));
   app.use('/api', createUsageRoutes(usageService));
   app.use('/api/insights', createInsightsRoutes(insightsService));
@@ -170,6 +200,10 @@ export const createApp = () => {
       providersService,
       usageService,
       insightsService,
+      trainingService,
+      evalsService,
+      modelRegistryService,
+      modelGatewayService,
     },
   };
 };

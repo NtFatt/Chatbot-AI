@@ -1,4 +1,4 @@
-import type { ArtifactGenerateType } from '../types/artifacts';
+import type { ArtifactGenerateType, ArtifactRefineInstruction, ArtifactContent } from '../types/artifacts';
 
 const qualityHint = `
 Them truong "qualityScore" trong ket qua.
@@ -162,3 +162,38 @@ export const buildStructuredArtifactUserPrompt = (
   content: string,
   language: string,
 ) => buildStructuredArtifactPrompt(type, content, language);
+
+const artifactRefineInstructionLabels: Record<ArtifactRefineInstruction, string> = {
+  make_easier: 'Lam artifact de hieu hon cho nguoi moi hoc, giai thich don gian hon.',
+  make_harder: 'Tang do kho va do sau, bo sung cac diem mang tinh phan tich hon.',
+  add_examples: 'Them vi du cu the, gan thuc te hoc tap hoac bai tap.',
+  shorten: 'Rut gon artifact, giu lai nhung y can thiet nhat.',
+  expand: 'Mo rong artifact de day du hon, bo sung y con thieu neu can.',
+  fix_accuracy: 'Ra soat va sua cac chi tiet de chinh xac hon voi kien thuc hoc tap.',
+  custom: 'Lam theo huong dan tuy chinh duoc nguoi dung cung cap.',
+};
+
+export const buildStructuredArtifactRefinePrompt = (input: {
+  type: ArtifactGenerateType;
+  language: string;
+  currentContent: ArtifactContent;
+  instruction: ArtifactRefineInstruction;
+  customInstruction?: string;
+}) => `
+Ban la tro ly hoc tap AI dang refine mot study artifact co cau truc.
+Hay chinh sua artifact loai "${input.type}" theo yeu cau duoi day, nhung van phai tra ve du lieu hop schema.
+
+Yeu cau refine:
+- ${artifactRefineInstructionLabels[input.instruction]}
+${input.customInstruction ? `- Chi dan tuy chinh bo sung: ${input.customInstruction}` : ''}
+
+Nguyen tac:
+- Giu dung y chinh cua artifact goc neu khong co ly do chinh xac de sua.
+- Neu phat hien diem sai hoac mo ho, uu tien sua cho dung.
+- Output phai ngan gon, huu ich, va hop schema.
+- Neu co the, cap nhat qualityScore phu hop chat luong moi; neu khong chac, co the de null.
+- Ngon ngu uu tien hien tai: ${input.language}
+
+ARTIFACT HIEN TAI (JSON):
+${JSON.stringify(input.currentContent, null, 2)}
+`.trim();

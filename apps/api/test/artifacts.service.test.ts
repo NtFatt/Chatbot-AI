@@ -306,6 +306,443 @@ describe('ArtifactsService', () => {
     expect(toggled.sessionTitle).toBe('Operating Systems');
   });
 
+  it('updates artifact content after validating the artifact type schema', async () => {
+    const now = new Date('2026-04-29T09:30:00.000Z');
+    const updateContent = vi.fn().mockResolvedValue({
+      id: 'artifact-1',
+      userId: 'user-1',
+      sessionId: 'session-1',
+      session: { title: 'Operating Systems' },
+      messageId: 'message-1',
+      type: 'summary',
+      title: 'Summary from: Scheduling',
+      content: {
+        bullets: ['Updated 1', 'Updated 2', 'Updated 3'],
+        keyTerms: ['scheduler'],
+      },
+      isFavorited: false,
+      shareToken: null,
+      qualityScore: 0.6,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const service = new ArtifactsService(
+      {
+        findById: vi.fn().mockResolvedValue({
+          id: 'artifact-1',
+          userId: 'user-1',
+          sessionId: 'session-1',
+          session: { title: 'Operating Systems' },
+          messageId: 'message-1',
+          type: 'summary',
+          title: 'Summary from: Scheduling',
+          content: {
+            bullets: ['Old 1', 'Old 2', 'Old 3'],
+          },
+          isFavorited: false,
+          shareToken: null,
+          qualityScore: 0.6,
+          createdAt: now,
+          updatedAt: now,
+        }),
+        updateContent,
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    const artifact = await service.updateContent('user-1', 'artifact-1', {
+      content: {
+        bullets: ['Updated 1', 'Updated 2', 'Updated 3'],
+        keyTerms: ['scheduler'],
+      },
+    });
+
+    expect(updateContent).toHaveBeenCalledWith('artifact-1', 'user-1', {
+      content: {
+        bullets: ['Updated 1', 'Updated 2', 'Updated 3'],
+        keyTerms: ['scheduler'],
+      },
+    });
+    expect(artifact.content).toEqual({
+      bullets: ['Updated 1', 'Updated 2', 'Updated 3'],
+      keyTerms: ['scheduler'],
+    });
+  });
+
+  it('rejects invalid artifact content updates for the stored artifact type', async () => {
+    const service = new ArtifactsService(
+      {
+        findById: vi.fn().mockResolvedValue({
+          id: 'artifact-1',
+          userId: 'user-1',
+          sessionId: 'session-1',
+          session: { title: 'Operating Systems' },
+          messageId: 'message-1',
+          type: 'summary',
+          title: 'Summary from: Scheduling',
+          content: {
+            bullets: ['Old 1', 'Old 2', 'Old 3'],
+          },
+          isFavorited: false,
+          shareToken: null,
+          qualityScore: 0.6,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.updateContent('user-1', 'artifact-1', {
+        content: {
+          body: 'This is actually a note body and should not pass summary validation.',
+        },
+      } as never),
+    ).rejects.toMatchObject({
+      code: 'INVALID_ARTIFACT_CONTENT',
+      statusCode: 400,
+    });
+  });
+
+  it('refines artifact content with structured output and persists quality score when available', async () => {
+    const now = new Date('2026-04-29T09:45:00.000Z');
+    const updateContent = vi.fn().mockResolvedValue({
+      id: 'artifact-1',
+      userId: 'user-1',
+      sessionId: 'session-1',
+      session: { title: 'Operating Systems' },
+      messageId: 'message-1',
+      type: 'summary',
+      title: 'Summary from: Scheduling',
+      content: {
+        bullets: ['Simpler 1', 'Simpler 2', 'Simpler 3'],
+        keyTerms: ['scheduler'],
+      },
+      isFavorited: false,
+      shareToken: null,
+      qualityScore: 0.91,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const structuredOutputService = {
+      generate: vi.fn().mockResolvedValue({
+        data: {
+          content: {
+            bullets: ['Simpler 1', 'Simpler 2', 'Simpler 3'],
+            keyTerms: ['scheduler'],
+          },
+          qualityScore: 0.91,
+        },
+        provider: 'OPENAI',
+        model: 'gpt-5.4-mini',
+        providerFallbackUsed: false,
+        legacyFallbackUsed: false,
+        warnings: [],
+      }),
+    };
+
+    const service = new ArtifactsService(
+      {
+        findById: vi.fn().mockResolvedValue({
+          id: 'artifact-1',
+          userId: 'user-1',
+          sessionId: 'session-1',
+          session: { title: 'Operating Systems' },
+          messageId: 'message-1',
+          type: 'summary',
+          title: 'Summary from: Scheduling',
+          content: {
+            bullets: ['Old 1', 'Old 2', 'Old 3'],
+          },
+          isFavorited: false,
+          shareToken: null,
+          qualityScore: 0.6,
+          createdAt: now,
+          updatedAt: now,
+        }),
+        updateContent,
+      } as never,
+      {
+        listProviders: vi.fn().mockResolvedValue({
+          defaultProvider: 'OPENAI',
+          fallbackProvider: 'GEMINI',
+          providers: [],
+        }),
+      } as never,
+      structuredOutputService as never,
+      {
+        me: vi.fn().mockResolvedValue({ preferredLanguage: 'vi' }),
+      } as never,
+      {
+        findSessionById: vi.fn().mockResolvedValue({ providerPreference: 'OPENAI' }),
+      } as never,
+    );
+
+    const artifact = await service.refine('user-1', 'artifact-1', {
+      instruction: 'make_easier',
+    });
+
+    expect(structuredOutputService.generate).toHaveBeenCalledTimes(1);
+    expect(updateContent).toHaveBeenCalledWith('artifact-1', 'user-1', {
+      content: {
+        bullets: ['Simpler 1', 'Simpler 2', 'Simpler 3'],
+        keyTerms: ['scheduler'],
+      },
+      qualityScore: 0.91,
+    });
+    expect(artifact.qualityScore).toBe(0.91);
+  });
+
+  it('records review history for quiz artifacts with a validated item index', async () => {
+    const recordedAt = new Date('2026-04-29T09:50:00.000Z');
+    const createReviewHistory = vi.fn().mockResolvedValue({
+      id: 'review-1',
+      userId: 'user-1',
+      artifactId: 'artifact-quiz',
+      itemIndex: 1,
+      selfAssessment: 'good',
+      reviewedAt: recordedAt,
+    });
+
+    const service = new ArtifactsService(
+      {
+        findById: vi.fn().mockResolvedValue({
+          id: 'artifact-quiz',
+          userId: 'user-1',
+          sessionId: 'session-1',
+          session: { title: 'Databases' },
+          messageId: 'message-1',
+          type: 'quiz_set',
+          title: 'Quiz from: SQL joins',
+          content: [
+            {
+              question: 'Q1',
+              options: ['A', 'B', 'C', 'D'],
+              answer: 0,
+            },
+            {
+              question: 'Q2',
+              options: ['A', 'B', 'C', 'D'],
+              answer: 1,
+            },
+            {
+              question: 'Q3',
+              options: ['A', 'B', 'C', 'D'],
+              answer: 2,
+            },
+            {
+              question: 'Q4',
+              options: ['A', 'B', 'C', 'D'],
+              answer: 3,
+            },
+          ],
+          isFavorited: false,
+          shareToken: null,
+          qualityScore: null,
+          createdAt: recordedAt,
+          updatedAt: recordedAt,
+        }),
+        createReviewHistory,
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    const event = await service.recordReviewEvent('user-1', 'artifact-quiz', {
+      itemIndex: 1,
+      selfAssessment: 'good',
+    });
+
+    expect(createReviewHistory).toHaveBeenCalledWith({
+      userId: 'user-1',
+      artifactId: 'artifact-quiz',
+      itemIndex: 1,
+      selfAssessment: 'good',
+    });
+    expect(event.itemIndex).toBe(1);
+    expect(event.selfAssessment).toBe('good');
+  });
+
+  it('defaults summary review history itemIndex to 0 when omitted', async () => {
+    const recordedAt = new Date('2026-04-29T09:55:00.000Z');
+    const createReviewHistory = vi.fn().mockResolvedValue({
+      id: 'review-2',
+      userId: 'user-1',
+      artifactId: 'artifact-summary',
+      itemIndex: 0,
+      selfAssessment: 'easy',
+      reviewedAt: recordedAt,
+    });
+
+    const service = new ArtifactsService(
+      {
+        findById: vi.fn().mockResolvedValue({
+          id: 'artifact-summary',
+          userId: 'user-1',
+          sessionId: 'session-1',
+          session: { title: 'Databases' },
+          messageId: 'message-1',
+          type: 'summary',
+          title: 'Summary from: SQL joins',
+          content: {
+            bullets: ['One', 'Two', 'Three'],
+            keyTerms: ['SQL'],
+          },
+          isFavorited: false,
+          shareToken: null,
+          qualityScore: 0.88,
+          createdAt: recordedAt,
+          updatedAt: recordedAt,
+        }),
+        createReviewHistory,
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    const event = await service.recordReviewEvent('user-1', 'artifact-summary', {
+      selfAssessment: 'easy',
+    });
+
+    expect(createReviewHistory).toHaveBeenCalledWith({
+      userId: 'user-1',
+      artifactId: 'artifact-summary',
+      itemIndex: 0,
+      selfAssessment: 'easy',
+    });
+    expect(event.itemIndex).toBe(0);
+  });
+
+  it('rejects quiz review history events when itemIndex is missing or out of range', async () => {
+    const service = new ArtifactsService(
+      {
+        findById: vi.fn().mockResolvedValue({
+          id: 'artifact-quiz',
+          userId: 'user-1',
+          sessionId: 'session-1',
+          session: { title: 'Databases' },
+          messageId: 'message-1',
+          type: 'quiz_set',
+          title: 'Quiz from: SQL joins',
+          content: [
+            {
+              question: 'Q1',
+              options: ['A', 'B', 'C', 'D'],
+              answer: 0,
+            },
+            {
+              question: 'Q2',
+              options: ['A', 'B', 'C', 'D'],
+              answer: 1,
+            },
+            {
+              question: 'Q3',
+              options: ['A', 'B', 'C', 'D'],
+              answer: 2,
+            },
+            {
+              question: 'Q4',
+              options: ['A', 'B', 'C', 'D'],
+              answer: 3,
+            },
+          ],
+          isFavorited: false,
+          shareToken: null,
+          qualityScore: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.recordReviewEvent('user-1', 'artifact-quiz', {
+        selfAssessment: 'again',
+      }),
+    ).rejects.toMatchObject({
+      code: 'ARTIFACT_REVIEW_ITEM_INDEX_REQUIRED',
+      statusCode: 400,
+    });
+
+    await expect(
+      service.recordReviewEvent('user-1', 'artifact-quiz', {
+        itemIndex: 9,
+        selfAssessment: 'again',
+      }),
+    ).rejects.toMatchObject({
+      code: 'ARTIFACT_REVIEW_ITEM_INDEX_INVALID',
+      statusCode: 400,
+    });
+  });
+
+  it('returns review history entries as ISO strings and hides missing artifacts as not found', async () => {
+    const listedAt = new Date('2026-04-29T10:05:00.000Z');
+    const service = new ArtifactsService(
+      {
+        findById: vi
+          .fn()
+          .mockResolvedValueOnce({
+            id: 'artifact-summary',
+            userId: 'user-1',
+            sessionId: 'session-1',
+            session: { title: 'Databases' },
+            messageId: 'message-1',
+            type: 'summary',
+            title: 'Summary from: SQL joins',
+            content: {
+              bullets: ['One', 'Two', 'Three'],
+            },
+            isFavorited: false,
+            shareToken: null,
+            qualityScore: null,
+            createdAt: listedAt,
+            updatedAt: listedAt,
+          })
+          .mockResolvedValueOnce(null),
+        listReviewHistory: vi.fn().mockResolvedValue([
+          {
+            id: 'review-1',
+            userId: 'user-1',
+            artifactId: 'artifact-summary',
+            itemIndex: 0,
+            selfAssessment: 'hard',
+            reviewedAt: listedAt,
+          },
+        ]),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    const [entry] = await service.listReviewHistory('user-1', 'artifact-summary');
+
+    expect(entry?.reviewedAt).toBe(listedAt.toISOString());
+
+    await expect(service.listReviewHistory('user-1', 'missing-artifact')).rejects.toMatchObject({
+      code: 'ARTIFACT_NOT_FOUND',
+      statusCode: 404,
+    });
+  });
+
   it('exports summary artifacts to stable markdown', async () => {
     const now = new Date('2026-04-29T10:00:00.000Z');
     const service = new ArtifactsService(

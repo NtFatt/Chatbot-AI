@@ -71,6 +71,7 @@ export interface AIChatRequest {
 export interface AIChatResult {
   provider: ProviderKey;
   model: string;
+  modelVersionId?: string | null;
   contentMarkdown: string;
   finishReason: AIFinishReason;
   usage?: TokenUsage;

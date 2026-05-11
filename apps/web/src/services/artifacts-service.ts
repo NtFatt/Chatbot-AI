@@ -1,12 +1,16 @@
 import type {
+  ArtifactReviewEventInput,
+  ArtifactContentUpdateInput,
   ArtifactExportPayload,
   ArtifactGenerateType,
+  ArtifactRefineInput,
   ArtifactSharePayload,
   ArtifactShareRevokePayload,
   ArtifactSearchResult,
   ArtifactType,
   PaginatedResponse,
   PublicStudyArtifact,
+  ReviewHistory,
   StudyArtifact,
 } from '@chatbot-ai/shared';
 
@@ -64,6 +68,35 @@ export const toggleFavorite = (artifactId: string) =>
 
 export const deleteArtifact = (artifactId: string) =>
   apiRequest<{ deleted: boolean }>(`/api/artifacts/${artifactId}`, { method: 'DELETE' });
+
+export const updateArtifactContent = (
+  artifactId: string,
+  input: ArtifactContentUpdateInput,
+) =>
+  apiRequest<StudyArtifact>(`/api/artifacts/${artifactId}/content`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+
+export const refineArtifact = (artifactId: string, input: ArtifactRefineInput) =>
+  apiRequest<StudyArtifact>(`/api/artifacts/${artifactId}/refine`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+
+export const recordArtifactReviewEvent = (
+  artifactId: string,
+  input: ArtifactReviewEventInput,
+) =>
+  apiRequest<ReviewHistory>(`/api/artifacts/${artifactId}/review-events`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+
+export const fetchArtifactReviewHistory = (artifactId: string) =>
+  apiRequest<PaginatedResponse<ReviewHistory>>(`/api/artifacts/${artifactId}/review-history`, {
+    method: 'GET',
+  });
 
 export const exportArtifactMarkdown = (artifactId: string) =>
   apiRequest<ArtifactExportPayload>(`/api/artifacts/${artifactId}/export`, { method: 'GET' });

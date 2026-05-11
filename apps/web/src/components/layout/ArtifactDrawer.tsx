@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { BookOpen, FlipHorizontal, Lightbulb, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
-import type { ArtifactType, StudyArtifact } from '@chatbot-ai/shared';
+import type { ArtifactContent, ArtifactRefineInput, ArtifactType, StudyArtifact } from '@chatbot-ai/shared';
 
 import { cn } from '../../utils/cn';
 import { ArtifactPreview } from '../chat/ArtifactPreview';
@@ -38,9 +38,13 @@ interface ArtifactDrawerProps {
   onExport?: (artifact: StudyArtifact) => void;
   onShare?: (artifact: StudyArtifact) => void;
   onRevokeShare?: (artifact: StudyArtifact) => void;
+  onSaveContent?: (artifact: StudyArtifact, content: ArtifactContent) => void;
+  onRefine?: (artifact: StudyArtifact, input: ArtifactRefineInput) => void;
   exportingArtifactId?: string | null;
   sharingArtifactId?: string | null;
   revokingArtifactId?: string | null;
+  savingArtifactId?: string | null;
+  refiningArtifactId?: string | null;
   sessionCount: number;
   onStartQuizReview?: (artifact: StudyArtifact) => void;
   onToggleFavorite?: (id: string) => void;
@@ -60,9 +64,13 @@ export const ArtifactDrawer = ({
   onExport,
   onShare,
   onRevokeShare,
+  onSaveContent,
+  onRefine,
   exportingArtifactId,
   sharingArtifactId,
   revokingArtifactId,
+  savingArtifactId,
+  refiningArtifactId,
   sessionCount,
   onStartQuizReview,
   onToggleFavorite,
@@ -272,13 +280,17 @@ export const ArtifactDrawer = ({
                           artifact={artifact}
                           onDelete={onDelete}
                           onExport={onExport}
+                          onRefine={onRefine}
                           onRevokeShare={onRevokeShare}
+                          onSaveContent={onSaveContent}
                           onShare={onShare}
                           onStartQuizReview={onStartQuizReview}
                           onToggleFavorite={onToggleFavorite}
                           showSessionProvenance={mode !== 'session'}
                           isExporting={exportingArtifactId === artifact.id}
+                          isRefining={refiningArtifactId === artifact.id}
                           isRevokingShare={revokingArtifactId === artifact.id}
+                          isSavingContent={savingArtifactId === artifact.id}
                           isSharing={sharingArtifactId === artifact.id}
                         />
                       </motion.div>

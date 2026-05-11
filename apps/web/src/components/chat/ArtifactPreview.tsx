@@ -1,10 +1,12 @@
-import { BookOpen, Copy, Download, FlipHorizontal, Heart, Lightbulb, Link2Off, Share2, Trash2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { BookOpen, Copy, Download, FlipHorizontal, Heart, Lightbulb, Link2Off, PencilLine, Save, Share2, Sparkles, Trash2, X } from 'lucide-react';
 
-import type { StudyArtifact } from '@chatbot-ai/shared';
+import type { ArtifactContent, ArtifactRefineInput, ArtifactRefineInstruction, StudyArtifact } from '@chatbot-ai/shared';
 
 import { cn } from '../../utils/cn';
 import { ScoreBadge } from '../ui/ScoreBadge';
 import { ArtifactContentView } from './artifact-preview/ArtifactPreviewContent';
+import { ArtifactPreviewEditor } from './artifact-preview/ArtifactPreviewEditor';
 
 interface ArtifactPreviewProps {
   artifact: StudyArtifact;
@@ -16,9 +18,13 @@ interface ArtifactPreviewProps {
   onExport?: (artifact: StudyArtifact) => void;
   onShare?: (artifact: StudyArtifact) => void;
   onRevokeShare?: (artifact: StudyArtifact) => void;
+  onSaveContent?: (artifact: StudyArtifact, content: ArtifactContent) => void;
+  onRefine?: (artifact: StudyArtifact, input: ArtifactRefineInput) => void;
   isExporting?: boolean;
   isSharing?: boolean;
   isRevokingShare?: boolean;
+  isSavingContent?: boolean;
+  isRefining?: boolean;
 }
 
 const artifactTypeLabel: Record<string, { label: string; icon: typeof BookOpen }> = {
@@ -45,13 +51,49 @@ export const ArtifactPreview = ({
   onExport,
   onShare,
   onRevokeShare,
+  onSaveContent,
+  onRefine,
   isExporting = false,
   isSharing = false,
   isRevokingShare = false,
+  isSavingContent = false,
+  isRefining = false,
 }: ArtifactPreviewProps) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftContent, setDraftContent] = useState<ArtifactContent>(artifact.content);
+  const [selectedRefineInstruction, setSelectedRefineInstruction] = useState<ArtifactRefineInstruction | ''>('');
+  const [customRefineInstruction, setCustomRefineInstruction] = useState('');
   const typeInfo = artifactTypeLabel[artifact.type] ?? { label: artifact.type, icon: BookOpen };
   const TypeIcon = typeInfo.icon;
-  const exportDisabled = isExporting || isSharing || isRevokingShare;
+  const exportDisabled = isExporting || isSharing || isRevokingShare || isSavingContent || isRefining;
+
+  useEffect(() => {
+    setDraftContent(artifact.content);
+    setIsEditing(false);
+    setSelectedRefineInstruction('');
+    setCustomRefineInstruction('');
+  }, [artifact.content, artifact.id, artifact.updatedAt]);
+
+  const refineDisabled =
+    !onRefine ||
+    isEditing ||
+    isRefining ||
+    isSavingContent ||
+    !selectedRefineInstruction ||
+    (selectedRefineInstruction === 'custom' && customRefineInstruction.trim().length < 5);
+
+  const handleRunRefine = () => {
+    if (!onRefine || !selectedRefineInstruction) {
+      return;
+    }
+
+    onRefine(artifact, {
+      instruction: selectedRefineInstruction,
+      ...(selectedRefineInstruction === 'custom'
+        ? { customInstruction: customRefineInstruction.trim() }
+        : {}),
+    });
+  };
 
   if (compact) {
     return (
@@ -116,6 +158,46 @@ export const ArtifactPreview = ({
           <span className="text-[11px] text-ink/40 dark:text-slate-500">
             {new Date(artifact.createdAt).toLocaleDateString()}
           </span>
+          {onSaveContent ? (
+            isEditing ? (
+              <>
+                <button
+                  className="focus-ring inline-flex items-center gap-1 rounded-lg border border-emerald-500/25 bg-emerald-500/8 px-2.5 py-1 text-[11px] font-semibold text-emerald-600 transition hover:bg-emerald-500/14 disabled:cursor-wait disabled:opacity-60 dark:border-emerald-400/25 dark:bg-emerald-400/10 dark:text-emerald-400"
+                  data-testid={`artifact-save-${artifact.id}`}
+                  disabled={isSavingContent || isRefining}
+                  onClick={() => onSaveContent(artifact, draftContent)}
+                  type="button"
+                >
+                  <Save className={cn('h-3.5 w-3.5', isSavingContent && 'animate-pulse')} />
+                  Save
+                </button>
+                <button
+                  className="focus-ring inline-flex items-center gap-1 rounded-lg border border-black/[0.08] bg-white/84 px-2.5 py-1 text-[11px] font-semibold text-ink/68 transition hover:bg-white hover:text-ink disabled:opacity-60 dark:border-white/10 dark:bg-white/[0.05] dark:text-slate-300 dark:hover:bg-white/[0.09]"
+                  data-testid={`artifact-cancel-${artifact.id}`}
+                  disabled={isSavingContent || isRefining}
+                  onClick={() => {
+                    setDraftContent(artifact.content);
+                    setIsEditing(false);
+                  }}
+                  type="button"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button
+                className="focus-ring inline-flex items-center gap-1 rounded-lg border border-black/[0.08] bg-white/84 px-2.5 py-1 text-[11px] font-semibold text-ink/68 transition hover:bg-white hover:text-ink disabled:opacity-60 dark:border-white/10 dark:bg-white/[0.05] dark:text-slate-300 dark:hover:bg-white/[0.09]"
+                data-testid={`artifact-edit-${artifact.id}`}
+                disabled={exportDisabled}
+                onClick={() => setIsEditing(true)}
+                type="button"
+              >
+                <PencilLine className="h-3.5 w-3.5" />
+                Edit
+              </button>
+            )
+          ) : null}
           {onExport ? (
             <button
               className="focus-ring rounded-lg p-1.5 text-ink/34 transition hover:bg-black/[0.05] hover:text-ink disabled:cursor-wait disabled:opacity-50 dark:text-slate-600 dark:hover:bg-white/[0.06] dark:hover:text-white"
@@ -199,7 +281,55 @@ export const ArtifactPreview = ({
           From session: <span className="text-ink/70 dark:text-slate-300">{artifact.sessionTitle}</span>
         </p>
       ) : null}
-      {artifact.type === 'quiz_set' && onStartQuizReview ? (
+      {onRefine ? (
+        <div className="mb-3 rounded-2xl border border-black/[0.06] bg-white/62 p-3 dark:border-white/10 dark:bg-slate-950/35">
+          <div className="flex flex-col gap-2 md:flex-row">
+            <select
+              className="focus-ring min-w-0 flex-1 rounded-xl border border-black/[0.08] bg-white/88 px-3 py-2 text-sm text-ink outline-none transition focus:border-ocean/40 dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-100 dark:focus:border-cyan/40"
+              data-testid={`artifact-refine-select-${artifact.id}`}
+              disabled={isEditing || isSavingContent || isRefining}
+              onChange={(event) => setSelectedRefineInstruction(event.target.value as ArtifactRefineInstruction | '')}
+              value={selectedRefineInstruction}
+            >
+              <option value="">Refine artifact...</option>
+              <option value="make_easier">De hon</option>
+              <option value="make_harder">Kho hon</option>
+              <option value="add_examples">Them vi du</option>
+              <option value="shorten">Rut gon</option>
+              <option value="expand">Mo rong</option>
+              <option value="fix_accuracy">Sua do chinh xac</option>
+              <option value="custom">Tuy chinh</option>
+            </select>
+            <button
+              className="focus-ring inline-flex items-center justify-center gap-1.5 rounded-xl border border-amber-500/25 bg-amber-500/8 px-3 py-2 text-sm font-semibold text-amber-600 transition hover:bg-amber-500/14 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-400"
+              data-testid={`artifact-refine-run-${artifact.id}`}
+              disabled={refineDisabled}
+              onClick={handleRunRefine}
+              type="button"
+            >
+              <Sparkles className={cn('h-3.5 w-3.5', isRefining && 'animate-pulse')} />
+              Refine
+            </button>
+          </div>
+          {selectedRefineInstruction === 'custom' ? (
+            <textarea
+              className="focus-ring mt-2 min-h-[88px] w-full rounded-xl border border-black/[0.08] bg-white/88 px-3 py-2 text-sm text-ink outline-none transition focus:border-ocean/40 dark:border-white/10 dark:bg-slate-950/50 dark:text-slate-100 dark:focus:border-cyan/40"
+              disabled={isEditing || isSavingContent || isRefining}
+              onChange={(event) => setCustomRefineInstruction(event.target.value)}
+              placeholder="Mo ta ban muon artifact duoc dieu chinh nhu the nao..."
+              value={customRefineInstruction}
+            />
+          ) : null}
+        </div>
+      ) : null}
+      {isEditing ? (
+        <ArtifactPreviewEditor
+          content={draftContent}
+          disabled={isSavingContent || isRefining}
+          onChange={setDraftContent}
+          type={artifact.type}
+        />
+      ) : artifact.type === 'quiz_set' && onStartQuizReview ? (
         <div>
           <ArtifactContentView content={artifact.content} previewOnly type={artifact.type} />
           <button

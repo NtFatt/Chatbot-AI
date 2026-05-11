@@ -3,8 +3,11 @@ import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  artifactContentUpdateSchema,
   artifactParamSchema,
   artifactQuerySchema,
+  artifactRefineSchema,
+  artifactReviewEventSchema,
   artifactSearchSchema,
   artifactShareTokenParamSchema,
   generateArtifactSchema,
@@ -30,6 +33,10 @@ const buildApp = (service: ArtifactsService) => {
   app.get('/api/artifacts/favorites', controller.listFavorites);
   app.get('/api/artifacts/session/:sessionId', controller.listBySession);
   app.patch('/api/artifacts/:id/favorite', controller.toggleFavorite);
+  app.patch('/api/artifacts/:id/content', validate(artifactParamSchema, 'params'), validate(artifactContentUpdateSchema, 'body'), controller.updateContent);
+  app.patch('/api/artifacts/:id/refine', validate(artifactParamSchema, 'params'), validate(artifactRefineSchema, 'body'), controller.refine);
+  app.post('/api/artifacts/:id/review-events', validate(artifactParamSchema, 'params'), validate(artifactReviewEventSchema, 'body'), controller.recordReviewEvent);
+  app.get('/api/artifacts/:id/review-history', validate(artifactParamSchema, 'params'), controller.listReviewHistory);
   app.get('/api/artifacts/:id/export', validate(artifactParamSchema, 'params'), controller.exportMarkdown);
   app.post('/api/artifacts/:id/share', validate(artifactParamSchema, 'params'), controller.createShareLink);
   app.delete('/api/artifacts/:id/share', validate(artifactParamSchema, 'params'), controller.revokeShareLink);
@@ -41,12 +48,12 @@ const buildApp = (service: ArtifactsService) => {
 const mockArtifact = (overrides: Partial<StudyArtifact> = {}): StudyArtifact => ({
   id: 'artifact-1',
   userId: 'user-1',
-  sessionId: 'sess-1',
+  sessionId: '11111111-1111-4111-8111-111111111111',
   sessionTitle: 'Session One',
   messageId: 'msg-1',
   type: 'summary' as ArtifactGenerateType,
   title: 'Summary from: What is SQL',
-  content: { bullets: ['Bullet 1', 'Bullet 2'], keyTerms: ['SQL', 'Database'] },
+  content: { bullets: ['Bullet 1', 'Bullet 2', 'Bullet 3'], keyTerms: ['SQL', 'Database'] },
   isFavorited: false,
   isShared: false,
   qualityScore: null,
@@ -157,17 +164,158 @@ describe('ArtifactsController', () => {
 
   describe('GET /api/artifacts/session/:sessionId', () => {
     it('returns artifacts for a session with success true', async () => {
-      const artifacts = [mockArtifact({ id: 'a-1', sessionId: 'sess-1' })];
+      const artifacts = [mockArtifact({ id: 'a-1', sessionId: '11111111-1111-4111-8111-111111111111' })];
       const service = { listBySession: vi.fn().mockResolvedValue(artifacts) } as unknown as ArtifactsService;
 
       const response = await request(buildApp(service))
-        .get('/api/artifacts/session/sess-1');
+        .get('/api/artifacts/session/11111111-1111-4111-8111-111111111111');
 
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
       expect(response.body.data.items).toHaveLength(1);
       expect(response.body.data.items[0].sessionTitle).toBe('Session One');
-      expect(service.listBySession).toHaveBeenCalledWith('user-1', 'sess-1');
+      expect(service.listBySession).toHaveBeenCalledWith('user-1', '11111111-1111-4111-8111-111111111111');
+    });
+  });
+
+  describe('PATCH /api/artifacts/:id/content', () => {
+    it('updates artifact content and returns the updated artifact', async () => {
+      const service = {
+        updateContent: vi.fn().mockResolvedValue(
+          mockArtifact({
+            content: {
+              bullets: ['Updated 1', 'Updated 2', 'Updated 3'],
+              keyTerms: ['SQL'],
+            },
+          }),
+        ),
+      } as unknown as ArtifactsService;
+
+      const response = await request(buildApp(service))
+        .patch('/api/artifacts/7d8dd7e5-c621-476f-a7bf-2cc586a55c70/content')
+        .send({
+          content: {
+            bullets: ['Updated 1', 'Updated 2', 'Updated 3'],
+            keyTerms: ['SQL'],
+          },
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(service.updateContent).toHaveBeenCalledWith('user-1', '7d8dd7e5-c621-476f-a7bf-2cc586a55c70', {
+        content: {
+          bullets: ['Updated 1', 'Updated 2', 'Updated 3'],
+          keyTerms: ['SQL'],
+        },
+      });
+    });
+  });
+
+  describe('PATCH /api/artifacts/:id/refine', () => {
+    it('refines an artifact with a preset instruction', async () => {
+      const service = {
+        refine: vi.fn().mockResolvedValue(
+          mockArtifact({
+            qualityScore: 0.91,
+            content: {
+              bullets: ['Simpler 1', 'Simpler 2', 'Simpler 3'],
+              keyTerms: ['SQL'],
+            },
+          }),
+        ),
+      } as unknown as ArtifactsService;
+
+      const response = await request(buildApp(service))
+        .patch('/api/artifacts/7d8dd7e5-c621-476f-a7bf-2cc586a55c70/refine')
+        .send({ instruction: 'make_easier' });
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(service.refine).toHaveBeenCalledWith('user-1', '7d8dd7e5-c621-476f-a7bf-2cc586a55c70', {
+        instruction: 'make_easier',
+      });
+    });
+
+    it('requires a custom instruction for custom refine mode', async () => {
+      const service = {
+        refine: vi.fn(),
+      } as unknown as ArtifactsService;
+
+      const response = await request(buildApp(service))
+        .patch('/api/artifacts/7d8dd7e5-c621-476f-a7bf-2cc586a55c70/refine')
+        .send({ instruction: 'custom' });
+
+      expect(response.status).toBe(400);
+      expect(service.refine).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /api/artifacts/:id/review-events', () => {
+    it('records a review event and returns the created entry', async () => {
+      const recordedAt = new Date().toISOString();
+      const service = {
+        recordReviewEvent: vi.fn().mockResolvedValue({
+          id: 'review-1',
+          userId: 'user-1',
+          artifactId: '7d8dd7e5-c621-476f-a7bf-2cc586a55c70',
+          itemIndex: 1,
+          selfAssessment: 'good',
+          reviewedAt: recordedAt,
+        }),
+      } as unknown as ArtifactsService;
+
+      const response = await request(buildApp(service))
+        .post('/api/artifacts/7d8dd7e5-c621-476f-a7bf-2cc586a55c70/review-events')
+        .send({ itemIndex: 1, selfAssessment: 'good' });
+
+      expect(response.status).toBe(201);
+      expect(response.body.success).toBe(true);
+      expect(service.recordReviewEvent).toHaveBeenCalledWith(
+        'user-1',
+        '7d8dd7e5-c621-476f-a7bf-2cc586a55c70',
+        { itemIndex: 1, selfAssessment: 'good' },
+      );
+    });
+
+    it('returns 400 for an invalid review event body', async () => {
+      const service = {
+        recordReviewEvent: vi.fn(),
+      } as unknown as ArtifactsService;
+
+      const response = await request(buildApp(service))
+        .post('/api/artifacts/7d8dd7e5-c621-476f-a7bf-2cc586a55c70/review-events')
+        .send({ itemIndex: -1, selfAssessment: 'good' });
+
+      expect(response.status).toBe(400);
+      expect(service.recordReviewEvent).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('GET /api/artifacts/:id/review-history', () => {
+    it('returns review history entries for an artifact', async () => {
+      const service = {
+        listReviewHistory: vi.fn().mockResolvedValue([
+          {
+            id: 'review-1',
+            userId: 'user-1',
+            artifactId: '7d8dd7e5-c621-476f-a7bf-2cc586a55c70',
+            itemIndex: 0,
+            selfAssessment: 'again',
+            reviewedAt: new Date().toISOString(),
+          },
+        ]),
+      } as unknown as ArtifactsService;
+
+      const response = await request(buildApp(service))
+        .get('/api/artifacts/7d8dd7e5-c621-476f-a7bf-2cc586a55c70/review-history');
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.total).toBe(1);
+      expect(service.listReviewHistory).toHaveBeenCalledWith(
+        'user-1',
+        '7d8dd7e5-c621-476f-a7bf-2cc586a55c70',
+      );
     });
   });
 

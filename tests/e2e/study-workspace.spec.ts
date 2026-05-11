@@ -145,10 +145,22 @@ const loginAndCreateSession = async (page: Page) => {
   await page.getByTitle('New conversation').click();
 };
 
+const forceHttpFallback = async (page: Page) => {
+  await page.evaluate(() =>
+    (
+      window as Window & {
+        __CHATBOT_AI_SOCKET_TEST__?: { disconnect: () => void };
+      }
+    ).__CHATBOT_AI_SOCKET_TEST__?.disconnect(),
+  );
+  await expect(page.getByTestId('connection-banner')).toBeVisible({ timeout: 15_000 });
+};
+
 test.describe('study workspace', () => {
   test('logs in, creates a session, and receives an assistant response', async ({ page }) => {
     await installChatMocks(page.context());
     await loginAndCreateSession(page);
+    await forceHttpFallback(page);
 
     await page.getByTestId('chat-composer-input').fill('Giải thích ngắn gọn về chuẩn hóa dữ liệu trong CSDL.');
     await page.getByTestId('chat-send-button').click();
@@ -200,11 +212,7 @@ test.describe('study workspace', () => {
 
     await page.getByTestId('chat-composer-input').fill('Cho mình ví dụ về khóa ngoại.');
 
-    // Disconnect socket so HTTP fallback is used
-    await page.evaluate(() =>
-      (window as Window & { __CHATBOT_AI_SOCKET_TEST__?: { disconnect: () => void } }).__CHATBOT_AI_SOCKET_TEST__?.disconnect(),
-    );
-    await expect(page.getByTestId('connection-banner')).toBeVisible({ timeout: 15_000 });
+    await forceHttpFallback(page);
 
     // First send → fails → retry button appears
     await page.getByTestId('chat-send-button').click();

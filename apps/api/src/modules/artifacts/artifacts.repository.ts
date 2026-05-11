@@ -153,6 +153,49 @@ export class ArtifactsRepository {
     });
   }
 
+  async updateContent(
+    artifactId: string,
+    userId: string,
+    input: {
+      content: object;
+      qualityScore?: number | null;
+    },
+  ) {
+    return prisma.studyArtifact.update({
+      where: { id: artifactId },
+      data: {
+        content: input.content,
+        ...(input.qualityScore !== undefined ? { qualityScore: input.qualityScore } : {}),
+      },
+      include: {
+        session: { select: { title: true } },
+      },
+    });
+  }
+
+  async createReviewHistory(input: {
+    userId: string;
+    artifactId: string;
+    itemIndex: number;
+    selfAssessment: 'again' | 'hard' | 'good' | 'easy';
+  }) {
+    return prisma.reviewHistory.create({
+      data: {
+        userId: input.userId,
+        artifactId: input.artifactId,
+        itemIndex: input.itemIndex,
+        selfAssessment: input.selfAssessment,
+      },
+    });
+  }
+
+  async listReviewHistory(artifactId: string) {
+    return prisma.reviewHistory.findMany({
+      where: { artifactId },
+      orderBy: [{ reviewedAt: 'desc' }, { id: 'desc' }],
+    });
+  }
+
   async setShareToken(artifactId: string, userId: string, shareToken: string) {
     return prisma.studyArtifact.update({
       where: { id: artifactId },

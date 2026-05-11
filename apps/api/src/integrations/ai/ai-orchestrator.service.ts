@@ -264,6 +264,7 @@ export class AIOrchestratorService {
           return {
             provider: providerState.key,
             model: providerState.model,
+            modelVersionId: providerState.modelVersionId ?? null,
             providerRequestId: response.providerRequestId,
             contentMarkdown: sanitizedResponse,
             finishReason: response.finishReason,
@@ -358,6 +359,7 @@ export class AIOrchestratorService {
     return {
       provider: candidates[0]?.key ?? input.sessionProvider,
       model: candidates[0]?.model ?? 'unknown',
+      modelVersionId: candidates[0]?.modelVersionId ?? null,
       contentMarkdown: 'Không thể tạo phản hồi AI ở thời điểm này.',
       finishReason: 'error',
       latencyMs: 0,

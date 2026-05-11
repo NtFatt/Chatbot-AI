@@ -1,8 +1,11 @@
 import { Router } from 'express';
 
 import {
+  artifactContentUpdateSchema,
   artifactParamSchema,
   artifactQuerySchema,
+  artifactRefineSchema,
+  artifactReviewEventSchema,
   artifactSearchSchema,
   artifactShareTokenParamSchema,
   generateArtifactSchema,
@@ -53,6 +56,33 @@ export const createArtifactsRoutes = (artifactsService: ArtifactsService) => {
     '/:id/favorite',
     validate(artifactParamSchema, 'params'),
     controller.toggleFavorite,
+  );
+
+  router.patch(
+    '/:id/content',
+    validate(artifactParamSchema, 'params'),
+    validate(artifactContentUpdateSchema, 'body'),
+    controller.updateContent,
+  );
+
+  router.patch(
+    '/:id/refine',
+    validate(artifactParamSchema, 'params'),
+    validate(artifactRefineSchema, 'body'),
+    controller.refine,
+  );
+
+  router.post(
+    '/:id/review-events',
+    validate(artifactParamSchema, 'params'),
+    validate(artifactReviewEventSchema, 'body'),
+    controller.recordReviewEvent,
+  );
+
+  router.get(
+    '/:id/review-history',
+    validate(artifactParamSchema, 'params'),
+    controller.listReviewHistory,
   );
 
   router.get(

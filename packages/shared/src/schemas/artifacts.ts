@@ -2,6 +2,16 @@ import { z } from 'zod';
 
 export const artifactTypeSchema = z.enum(['summary', 'flashcard_set', 'quiz_set', 'note']);
 export const artifactQualityScoreSchema = z.number().min(0).max(1);
+export const artifactRefineInstructionSchema = z.enum([
+  'make_easier',
+  'make_harder',
+  'add_examples',
+  'shorten',
+  'expand',
+  'fix_accuracy',
+  'custom',
+]);
+export const reviewSelfAssessmentSchema = z.enum(['again', 'hard', 'good', 'easy']);
 
 export const flashcardCardSchema = z.object({
   front: z.string().trim().min(1).max(220),
@@ -202,4 +212,42 @@ export const artifactQuerySchema = z.object({
   sessionId: z.string().uuid().optional(),
   type: artifactTypeSchema.optional(),
   limit: z.coerce.number().min(1).max(50).default(20),
+});
+
+export const artifactContentUpdateSchema = z.object({
+  content: z.union([
+    summaryContentSchema,
+    noteContentSchema,
+    flashcardSetContentSchema,
+    quizSetContentSchema,
+  ]),
+});
+
+export const artifactRefineSchema = z
+  .object({
+    instruction: artifactRefineInstructionSchema,
+    customInstruction: z.string().trim().min(5).max(500).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.instruction === 'custom' && !value.customInstruction) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Custom instruction is required when instruction is custom.',
+        path: ['customInstruction'],
+      });
+    }
+  });
+
+export const artifactReviewEventSchema = z.object({
+  itemIndex: z.number().int().min(0).optional(),
+  selfAssessment: reviewSelfAssessmentSchema,
+});
+
+export const reviewHistorySchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string().uuid(),
+  artifactId: z.string().uuid(),
+  itemIndex: z.number().int().min(0),
+  selfAssessment: reviewSelfAssessmentSchema,
+  reviewedAt: z.string().datetime(),
 });

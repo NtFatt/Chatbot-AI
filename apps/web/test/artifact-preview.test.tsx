@@ -1,4 +1,4 @@
-import { cleanup, render, screen, act } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { RenderResult } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -150,6 +150,63 @@ describe('ArtifactPreview', () => {
     expect(onExport).toHaveBeenCalledWith(expect.objectContaining({ id: 'artifact-1' }));
     expect(onShare).toHaveBeenCalledWith(expect.objectContaining({ id: 'artifact-1' }));
     expect(onRevokeShare).toHaveBeenCalledWith(expect.objectContaining({ id: 'artifact-1' }));
+  });
+
+  it('supports editing, saving, and canceling summary artifacts', async () => {
+    const onSaveContent = vi.fn();
+    render(<ArtifactPreview artifact={makeArtifact()} onSaveContent={onSaveContent} />);
+
+    await act(async () => {
+      screen.getByText('Edit').click();
+    });
+
+    const textarea = screen.getAllByRole('textbox')[0]!;
+    fireEvent.change(textarea, {
+      target: {
+        value: 'Updated bullet 1\nUpdated bullet 2\nUpdated bullet 3',
+      },
+    });
+
+    await act(async () => {
+      screen.getByText('Save').click();
+    });
+
+    expect(onSaveContent).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'artifact-1' }),
+      {
+        bullets: ['Updated bullet 1', 'Updated bullet 2', 'Updated bullet 3'],
+        keyTerms: ['join', 'SQL', 'relational'],
+      },
+    );
+
+    cleanup();
+    onSaveContent.mockClear();
+    render(<ArtifactPreview artifact={makeArtifact()} onSaveContent={onSaveContent} />);
+    await act(async () => {
+      screen.getAllByText('Edit')[0]!.click();
+    });
+    await act(async () => {
+      screen.getAllByText('Cancel')[0]!.click();
+    });
+    expect(onSaveContent).not.toHaveBeenCalled();
+  });
+
+  it('triggers artifact refine with the selected instruction', async () => {
+    const onRefine = vi.fn();
+    render(<ArtifactPreview artifact={makeArtifact()} onRefine={onRefine} />);
+
+    fireEvent.change(screen.getByTestId('artifact-refine-select-artifact-1'), {
+      target: { value: 'make_easier' },
+    });
+
+    await act(async () => {
+      screen.getByTestId('artifact-refine-run-artifact-1').click();
+    });
+
+    expect(onRefine).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'artifact-1' }),
+      { instruction: 'make_easier' },
+    );
   });
 
   it('renders compact variant', () => {

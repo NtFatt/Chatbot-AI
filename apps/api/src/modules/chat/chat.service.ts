@@ -414,6 +414,10 @@ export class ChatService {
           callbacks?.onAIChunk?.(chunk, provider, model);
         },
       });
+      const assistantRetrievalSnapshot = {
+        ...(aiResult.retrievalSnapshot ?? retrievalContext),
+        ...(aiResult.modelVersionId ? { modelVersionId: aiResult.modelVersionId } : {}),
+      } satisfies RetrievalSnapshot;
       const turnIntelligence = await this.sessionIntelligenceService.inferTurnMetadata({
         userId,
         sessionId: payload.sessionId,
@@ -423,7 +427,7 @@ export class ChatService {
         currentTitle: updatedSession?.title ?? session.title,
         question: normalizedMessage,
         answer: aiResult.contentMarkdown,
-        retrievalSnapshot: aiResult.retrievalSnapshot ?? retrievalContext,
+        retrievalSnapshot: assistantRetrievalSnapshot,
       });
 
       const finalAssistant = await this.chatRepository.updateMessage({
@@ -443,7 +447,7 @@ export class ChatService {
         topicLabel: turnIntelligence.topicLabel,
         levelLabel: turnIntelligence.levelLabel,
         fallbackUsed: aiResult.fallbackUsed,
-        retrievalSnapshot: toJsonValue(aiResult.retrievalSnapshot ?? retrievalContext),
+        retrievalSnapshot: toJsonValue(assistantRetrievalSnapshot),
         errorCode: aiResult.finishReason === 'error' ? 'AI_PROVIDER_FAILURE' : null,
       });
 
