@@ -7,12 +7,14 @@ import type {
   SenderType,
 } from '../constants/ui';
 import type { AIFallbackInfo } from './ai-fallback';
+import type { AiRuntimeMode } from './ai-runtime';
 import type { RetrievalSnapshot } from './materials';
 
 export interface ChatSessionSummary {
   id: string;
   title: string;
   providerPreference: ProviderKey;
+  aiRuntimeMode: AiRuntimeMode;
   contextSummary: string | null;
   isPinned: boolean;
   pinnedAt: string | null;
@@ -37,6 +39,10 @@ export interface ChatMessage {
   provider: ProviderKey | null;
   model: string | null;
   providerRequestId: string | null;
+  modelVersionId?: string | null;
+  aiRuntimeMode?: AiRuntimeMode | null;
+  learningEngineUsed?: boolean;
+  externalFallbackUsed?: boolean;
   responseFinishReason: AIFinishReason | null;
   latencyMs: number | null;
   inputTokens: number | null;
@@ -72,6 +78,9 @@ export interface AIChatResult {
   provider: ProviderKey;
   model: string;
   modelVersionId?: string | null;
+  aiRuntimeMode?: AiRuntimeMode | null;
+  learningEngineUsed?: boolean;
+  externalFallbackUsed?: boolean;
   contentMarkdown: string;
   finishReason: AIFinishReason;
   usage?: TokenUsage;

@@ -16,6 +16,7 @@ enum PreferredLanguage {
 enum ProviderKey {
   GEMINI
   OPENAI
+  internal_l3_tutor
 }
 
 enum MaterialLevel {
@@ -97,6 +98,7 @@ enum EvalCategory {
 }
 
 enum ModelVersionProvider {
+  internal_l3_tutor
   gemini
   openai
   fine_tuned_openai
@@ -169,6 +171,7 @@ model ChatSession {
   userId             String
   title              String
   providerPreference ProviderKey           @default(GEMINI)
+  aiRuntimeMode      String                @default("external_api")
   contextSummary     String?
   isPinned           Boolean              @default(false)
   pinnedAt           DateTime?

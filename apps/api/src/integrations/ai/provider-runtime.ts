@@ -66,6 +66,7 @@ export const isConfigurationError = (descriptor: AIProviderErrorDescriptor | nul
 const providerLabelMap: Record<ProviderKey, string> = {
   GEMINI: 'Gemini',
   OPENAI: 'OpenAI',
+  internal_l3_tutor: 'Internal L3 Tutor',
 };
 
 const joinLocalized = (language: AppLanguage, vi: string, en: string) => {

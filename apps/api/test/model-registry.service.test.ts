@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { env } from '../src/config/env';
 import { ModelRegistryService } from '../src/modules/model-registry/model-registry.service';
-import { AppError } from '../src/utils/errors';
 
 describe('ModelRegistryService', () => {
   it('activates only ready model versions', async () => {
@@ -57,5 +57,58 @@ describe('ModelRegistryService', () => {
       code: 'MODEL_VERSION_NOT_READY',
       statusCode: 400,
     });
+  });
+
+  it('ensures a default internal L3 tutor version for the learning engine runtime', async () => {
+    const repository = {
+      findActiveByProviders: vi.fn().mockResolvedValue(null),
+      findFirstByProviderAndBaseModel: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockResolvedValue({
+        id: 'internal-l3-version',
+        name: 'Internal L3 Tutor',
+        provider: 'internal_l3_tutor',
+        baseModel: env.L3_INTERNAL_MODEL_NAME,
+        fineTunedModel: null,
+        status: 'ready',
+        isActive: false,
+        metadata: { runtimeMode: 'learning_engine_l3' },
+        createdAt: new Date('2026-05-13T00:00:00.000Z'),
+        updatedAt: new Date('2026-05-13T00:00:00.000Z'),
+      }),
+      activate: vi.fn().mockResolvedValue({
+        id: 'internal-l3-version',
+        name: 'Internal L3 Tutor',
+        provider: 'internal_l3_tutor',
+        baseModel: env.L3_INTERNAL_MODEL_NAME,
+        fineTunedModel: null,
+        status: 'ready',
+        isActive: true,
+        metadata: { runtimeMode: 'learning_engine_l3' },
+        createdAt: new Date('2026-05-13T00:00:00.000Z'),
+        updatedAt: new Date('2026-05-13T00:00:00.000Z'),
+      }),
+      listVersions: vi.fn().mockResolvedValue([
+        {
+          id: 'internal-l3-version',
+          name: 'Internal L3 Tutor',
+          provider: 'internal_l3_tutor',
+          baseModel: env.L3_INTERNAL_MODEL_NAME,
+          fineTunedModel: null,
+          status: 'ready',
+          isActive: true,
+          metadata: { runtimeMode: 'learning_engine_l3' },
+          createdAt: new Date('2026-05-13T00:00:00.000Z'),
+          updatedAt: new Date('2026-05-13T00:00:00.000Z'),
+        },
+      ]),
+    };
+
+    const service = new ModelRegistryService(repository as never);
+    const version = await service.getActiveLearningEngineModel();
+
+    expect(repository.create).toHaveBeenCalledTimes(1);
+    expect(repository.activate).toHaveBeenCalledWith('internal-l3-version', ['internal_l3_tutor']);
+    expect(version?.provider).toBe('internal_l3_tutor');
+    expect(version?.baseModel).toBe(env.L3_INTERNAL_MODEL_NAME);
   });
 });

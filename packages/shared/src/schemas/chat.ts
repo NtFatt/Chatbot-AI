@@ -1,20 +1,23 @@
 import { z } from 'zod';
 
-import { PROVIDER_KEYS } from '../constants/providers';
+import { EXTERNAL_PROVIDER_KEYS } from '../constants/providers';
 import {
   MATERIAL_LEVELS,
   MAX_MESSAGE_CHARS,
   MAX_SESSION_TITLE_CHARS,
 } from '../constants/ui';
+import { aiRuntimeModeSchema } from './ai-runtime';
 
 export const createChatSessionSchema = z.object({
   title: z.string().trim().min(1).max(MAX_SESSION_TITLE_CHARS).optional(),
-  providerPreference: z.enum(PROVIDER_KEYS).default('GEMINI'),
+  providerPreference: z.enum(EXTERNAL_PROVIDER_KEYS).default('GEMINI'),
+  aiRuntimeMode: aiRuntimeModeSchema.optional(),
 });
 
 export const updateChatSessionSchema = z.object({
   title: z.string().trim().min(1).max(MAX_SESSION_TITLE_CHARS).optional(),
-  providerPreference: z.enum(PROVIDER_KEYS).optional(),
+  providerPreference: z.enum(EXTERNAL_PROVIDER_KEYS).optional(),
+  aiRuntimeMode: aiRuntimeModeSchema.optional(),
   isPinned: z.boolean().optional(),
   isArchived: z.boolean().optional(),
 });
@@ -27,7 +30,7 @@ export const askChatSchema = z.object({
     .trim()
     .min(1, 'Message cannot be empty.')
     .max(MAX_MESSAGE_CHARS, 'Message is too long.'),
-  provider: z.enum(PROVIDER_KEYS).optional(),
+  provider: z.enum(EXTERNAL_PROVIDER_KEYS).optional(),
 });
 
 export const sessionParamSchema = z.object({

@@ -1,4 +1,5 @@
 import {
+  type AiRuntimeMode,
   buildSessionSummarySystemPrompt,
   buildSessionSummaryUserPrompt,
   buildTurnIntelligenceSystemPrompt,
@@ -17,6 +18,7 @@ import {
 import { truncateText, buildSessionTitle } from '../../utils/text';
 import { StructuredOutputService } from '../../integrations/ai/structured-output.service';
 import type { AIConversationMessage } from '../../integrations/ai/ai.types';
+import { env } from '../../config/env';
 
 const DEFAULT_SESSION_TITLE = 'Tro chuyen moi / New study chat';
 
@@ -45,15 +47,59 @@ export class SessionIntelligenceService {
     question: string;
     retrievalSnapshot?: RetrievalSnapshot | null;
     currentTitle?: string | null;
+    reason?: string;
   }): TurnIntelligenceResult {
     return {
       subjectLabel: input.retrievalSnapshot?.inferredSubject ?? null,
       topicLabel: input.retrievalSnapshot?.inferredTopic ?? null,
       levelLabel: input.retrievalSnapshot?.materials[0]?.level ?? null,
-      confidenceScore: null,
+      confidenceScore: input.retrievalSnapshot?.materials.length ? 0.78 : 0.62,
       titleSuggestion:
         input.currentTitle === DEFAULT_SESSION_TITLE ? buildSessionTitle(input.question) : null,
-      warnings: ['Turn intelligence fell back to retrieval heuristics.'],
+      warnings: [
+        input.reason ??
+          'Turn intelligence fell back to retrieval heuristics.',
+      ],
+    };
+  }
+
+  private buildHeuristicSessionSummary(input: {
+    currentTitle?: string | null;
+    existingSummary?: string | null;
+    messages: ChatMessage[];
+    reason?: string;
+  }): SessionSummaryResult {
+    const assistantTopics = [...input.messages]
+      .reverse()
+      .filter((message) => message.senderType === 'assistant')
+      .map((message) => message.topicLabel ?? message.subjectLabel ?? null)
+      .filter((value): value is string => Boolean(value));
+    const latestAssistant = [...input.messages]
+      .reverse()
+      .find((message) => message.senderType === 'assistant');
+    const focusTopic = assistantTopics[0] ?? 'Current study topic';
+    const contextSummary = input.existingSummary?.trim()
+      ? input.existingSummary
+      : truncateText(
+          `Session focused on ${focusTopic}. Latest explanation: ${
+            latestAssistant?.content.replace(/\s+/g, ' ').trim() ?? 'No assistant summary yet.'
+          }`,
+          500,
+        );
+
+    return {
+      contextSummary,
+      subjectLabel: latestAssistant?.subjectLabel ?? null,
+      topicLabel: latestAssistant?.topicLabel ?? latestAssistant?.subjectLabel ?? null,
+      levelLabel: latestAssistant?.levelLabel ?? null,
+      titleSuggestion:
+        input.currentTitle === DEFAULT_SESSION_TITLE && latestAssistant?.topicLabel
+          ? latestAssistant.topicLabel
+          : null,
+      warnings: [
+        input.reason ??
+          'Session summary used deterministic heuristics instead of structured output.',
+      ],
     };
   }
 
@@ -74,6 +120,7 @@ export class SessionIntelligenceService {
   async inferTurnMetadata(input: {
     userId: string;
     sessionId: string;
+    aiRuntimeMode?: AiRuntimeMode;
     requestedProvider?: ProviderKey;
     sessionProvider: ProviderKey;
     language: AppLanguage;
@@ -82,6 +129,15 @@ export class SessionIntelligenceService {
     answer: string;
     retrievalSnapshot?: RetrievalSnapshot | null;
   }): Promise<TurnIntelligenceResult> {
+    if (input.aiRuntimeMode === 'learning_engine_l3' && !env.L3_ALLOW_EXTERNAL_FALLBACK) {
+      return this.buildHeuristicTurnMetadata({
+        question: input.question,
+        retrievalSnapshot: input.retrievalSnapshot,
+        currentTitle: input.currentTitle,
+        reason: 'Turn intelligence used local L3 heuristics.',
+      });
+    }
+
     try {
       const result = await this.structuredOutputService.generate({
         userId: input.userId,
@@ -124,6 +180,7 @@ export class SessionIntelligenceService {
         question: input.question,
         retrievalSnapshot: input.retrievalSnapshot,
         currentTitle: input.currentTitle,
+        reason: 'Turn intelligence fell back to retrieval heuristics.',
       });
     }
   }
@@ -131,6 +188,7 @@ export class SessionIntelligenceService {
   async summarizeLongSession(input: {
     userId: string;
     sessionId: string;
+    aiRuntimeMode?: AiRuntimeMode;
     requestedProvider?: ProviderKey;
     sessionProvider: ProviderKey;
     language: AppLanguage;
@@ -140,6 +198,15 @@ export class SessionIntelligenceService {
   }): Promise<SessionSummaryResult | null> {
     if (input.messages.length < 10) {
       return null;
+    }
+
+    if (input.aiRuntimeMode === 'learning_engine_l3' && !env.L3_ALLOW_EXTERNAL_FALLBACK) {
+      return this.buildHeuristicSessionSummary({
+        currentTitle: input.currentTitle,
+        existingSummary: input.existingSummary,
+        messages: input.messages,
+        reason: 'Session summary used local L3 heuristics.',
+      });
     }
 
     try {
@@ -174,7 +241,11 @@ export class SessionIntelligenceService {
         warnings: result.warnings,
       };
     } catch {
-      return null;
+      return this.buildHeuristicSessionSummary({
+        currentTitle: input.currentTitle,
+        existingSummary: input.existingSummary,
+        messages: input.messages,
+      });
     }
   }
 }

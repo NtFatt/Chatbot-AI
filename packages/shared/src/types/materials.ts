@@ -1,5 +1,7 @@
 import type { MaterialLevel, MaterialType } from '../constants/ui';
 import type { AIFallbackInfo } from './ai-fallback';
+import type { AiRuntimeMode } from './ai-runtime';
+import type { ProviderKey } from '../constants/providers';
 
 export interface MaterialSubject {
   id: string;
@@ -47,6 +49,11 @@ export interface RetrievalMaterialSource extends Record<string, unknown> {
 }
 
 export interface RetrievalSnapshot extends Record<string, unknown> {
+  aiRuntimeMode?: AiRuntimeMode | null;
+  executionProvider?: ProviderKey | null;
+  executionModel?: string | null;
+  learningEngineUsed?: boolean;
+  externalFallbackUsed?: boolean;
   inferredSubject?: string | null;
   inferredTopic?: string | null;
   modelVersionId?: string | null;

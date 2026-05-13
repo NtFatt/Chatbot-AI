@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import type { EvalCategory, ModelVersion, ProviderKey } from '@chatbot-ai/shared';
+import type { EvalCategory, ExternalProviderKey, ModelVersion } from '@chatbot-ai/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Check, Download, FlaskConical, Play, ShieldCheck, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -54,6 +54,42 @@ const showMutationError = (error: unknown, fallbackMessage: string) => {
   });
 };
 
+const runtimeProviderLabel = (provider: string) => {
+  switch (provider) {
+    case 'internal_l3_tutor':
+      return 'Internal L3 Tutor';
+    case 'GEMINI':
+      return 'Gemini';
+    case 'OPENAI':
+      return 'OpenAI';
+    case 'LOCAL':
+      return 'Local runtime';
+    default:
+      return provider;
+  }
+};
+
+const modelProviderLabel = (provider: ModelVersion['provider']) => {
+  switch (provider) {
+    case 'internal_l3_tutor':
+      return 'Internal L3 Tutor';
+    case 'gemini':
+      return 'Gemini';
+    case 'openai':
+      return 'OpenAI';
+    case 'fine_tuned_openai':
+      return 'Fine-tuned OpenAI';
+    case 'local_ollama':
+      return 'Local Ollama';
+    case 'local_lora':
+      return 'Local LoRA';
+    default:
+      return provider;
+  }
+};
+
+const benchmarkableProviders = new Set<ModelVersion['provider']>(['gemini', 'openai', 'fine_tuned_openai', 'local_lora']);
+
 export const AiLabPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -67,7 +103,7 @@ export const AiLabPage = () => {
   const [evalCaseCategory, setEvalCaseCategory] = useState<EvalCategory>('explain_concept');
   const [evalCasePrompt, setEvalCasePrompt] = useState('');
   const [evalCaseIdealResponse, setEvalCaseIdealResponse] = useState('');
-  const [evalProvider, setEvalProvider] = useState<ProviderKey>('OPENAI');
+  const [evalProvider, setEvalProvider] = useState<ExternalProviderKey>('OPENAI');
   const [evalModelOverride, setEvalModelOverride] = useState('');
   const [selectedEvalModelVersionId, setSelectedEvalModelVersionId] = useState('');
   const [trainingProvider, setTrainingProvider] = useState<'fine_tuned_openai' | 'local_lora'>('local_lora');
@@ -121,6 +157,10 @@ export const AiLabPage = () => {
   const evalRuns = evalRunsQuery.data?.items ?? [];
   const modelVersions = modelVersionsQuery.data?.items ?? [];
   const activeModels = activeModelsQuery.data?.items ?? [];
+  const benchmarkableModelVersions = useMemo(
+    () => modelVersions.filter((version) => benchmarkableProviders.has(version.provider)),
+    [modelVersions],
+  );
 
   useEffect(() => {
     if (!selectedDatasetId && trainingDatasetsQuery.data?.items.length) {
@@ -438,9 +478,14 @@ export const AiLabPage = () => {
                 {evalCases.map((evalCase) => <div className="rounded-2xl border border-black/[0.06] bg-white/58 p-3 dark:border-white/10 dark:bg-white/[0.03]" key={evalCase.id}><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-semibold text-ink dark:text-slate-100">{evalCase.name}</p><p className="mt-1 text-xs font-semibold uppercase tracking-[0.14em] text-ink/45 dark:text-slate-500">{evalCase.category}</p></div><button className="focus-ring rounded-xl border border-red-500/20 bg-red-500/8 px-2.5 py-1.5 text-xs font-semibold text-red-600 disabled:opacity-60 dark:text-red-400" disabled={deletingEvalCaseId === evalCase.id} onClick={() => deleteEvalCaseMutation.mutate(evalCase.id)} type="button">Delete</button></div><p className="mt-2 line-clamp-3 text-xs leading-5 text-ink/58 dark:text-slate-400">{evalCase.inputMessages[0]?.content}</p></div>)}
               </div>
               <div className="space-y-2 rounded-2xl border border-black/[0.06] bg-white/58 p-4 dark:border-white/10 dark:bg-white/[0.03]">
-                <select className={fieldClass} onChange={(event) => setEvalProvider(event.target.value as ProviderKey)} value={evalProvider}><option value="OPENAI">OPENAI</option><option value="GEMINI">GEMINI</option></select>
+                <select className={fieldClass} onChange={(event) => setEvalProvider(event.target.value as ExternalProviderKey)} value={evalProvider}><option value="OPENAI">OPENAI</option><option value="GEMINI">GEMINI</option></select>
                 <input className={fieldClass} onChange={(event) => setEvalModelOverride(event.target.value)} placeholder="Optional model override" value={evalModelOverride} />
-                <select className={fieldClass} onChange={(event) => setSelectedEvalModelVersionId(event.target.value)} value={selectedEvalModelVersionId}><option value="">Use current runtime model</option>{(modelVersionsQuery.data?.items ?? []).map((version) => <option key={version.id} value={version.id}>{version.name} ({version.status})</option>)}</select>
+                <select className={fieldClass} onChange={(event) => setSelectedEvalModelVersionId(event.target.value)} value={selectedEvalModelVersionId}><option value="">Use current runtime model</option>{benchmarkableModelVersions.map((version) => <option key={version.id} value={version.id}>{version.name} ({version.status})</option>)}</select>
+                {modelVersions.length > 0 && benchmarkableModelVersions.length === 0 ? (
+                  <p className="text-xs leading-5 text-ink/55 dark:text-slate-400">
+                    Evaluation runs currently benchmark external or fine-tuned OpenAI/Gemini versions. Internal L3 Tutor and local scaffolds stay visible in the model registry panel below.
+                  </p>
+                ) : null}
                 <button className="focus-ring rounded-xl bg-amber-500 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-amber-500/90 disabled:opacity-60" disabled={createEvalRunMutation.isPending || evalCases.length === 0} onClick={() => createEvalRunMutation.mutate()} type="button"><Play className="mr-1 inline h-4 w-4" />Run all cases</button>
               </div>
             </div>
@@ -462,14 +507,14 @@ export const AiLabPage = () => {
                   No benchmark runs yet. Run the current case pack to capture a baseline score.
                 </div>
               ) : null}
-              {evalRuns.map((run) => <div className="rounded-2xl border border-black/[0.06] bg-white/58 p-4 dark:border-white/10 dark:bg-white/[0.03]" key={run.id}><div className="flex items-center justify-between gap-3"><div><p className="text-sm font-semibold text-ink dark:text-slate-100">{run.provider} / {run.model}</p><p className="mt-1 text-xs text-ink/55 dark:text-slate-400">Avg score: {run.averageScore?.toFixed(2) ?? 'N/A'}</p></div><span className="rounded-full bg-black/[0.05] px-2 py-1 text-[11px] font-semibold text-ink/60 dark:bg-white/10 dark:text-slate-300">{new Date(run.createdAt).toLocaleString()}</span></div><div className="mt-3 space-y-2">{run.results.map((result) => <div className="rounded-xl border border-black/[0.05] bg-white/82 px-3 py-2 text-xs dark:border-white/8 dark:bg-slate-950/30" key={result.id}><div className="flex items-center justify-between gap-3"><span className="font-semibold text-ink dark:text-slate-100">{result.evalCaseName}</span><span className="font-semibold text-ocean dark:text-cyan">{result.score.toFixed(2)}</span></div>{result.notes ? <p className="mt-1 text-ink/55 dark:text-slate-400">{result.notes}</p> : null}</div>)}</div></div>)}
+              {evalRuns.map((run) => <div className="rounded-2xl border border-black/[0.06] bg-white/58 p-4 dark:border-white/10 dark:bg-white/[0.03]" key={run.id}><div className="flex items-center justify-between gap-3"><div><p className="text-sm font-semibold text-ink dark:text-slate-100">{runtimeProviderLabel(run.provider)} / {run.model}</p><p className="mt-1 text-xs text-ink/55 dark:text-slate-400">Avg score: {run.averageScore?.toFixed(2) ?? 'N/A'}</p></div><span className="rounded-full bg-black/[0.05] px-2 py-1 text-[11px] font-semibold text-ink/60 dark:bg-white/10 dark:text-slate-300">{new Date(run.createdAt).toLocaleString()}</span></div><div className="mt-3 space-y-2">{run.results.map((result) => <div className="rounded-xl border border-black/[0.05] bg-white/82 px-3 py-2 text-xs dark:border-white/8 dark:bg-slate-950/30" key={result.id}><div className="flex items-center justify-between gap-3"><span className="font-semibold text-ink dark:text-slate-100">{result.evalCaseName}</span><span className="font-semibold text-ocean dark:text-cyan">{result.score.toFixed(2)}</span></div>{result.notes ? <p className="mt-1 text-ink/55 dark:text-slate-400">{result.notes}</p> : null}</div>)}</div></div>)}
             </div>
           </section>
         </div>
 
         <section className={`${panelClass} space-y-4`} data-testid="ai-lab-models">
           <div className="flex flex-wrap gap-2">
-            {activeModels.map((item) => <span className="rounded-full border border-emerald-500/20 bg-emerald-500/8 px-3 py-1 text-xs font-semibold text-emerald-600 dark:border-emerald-400/25 dark:bg-emerald-400/10 dark:text-emerald-400" key={`${item.runtimeProvider}-${item.version.id}`}>{item.runtimeProvider}: {item.version.name}</span>)}
+            {activeModels.map((item) => <span className="rounded-full border border-emerald-500/20 bg-emerald-500/8 px-3 py-1 text-xs font-semibold text-emerald-600 dark:border-emerald-400/25 dark:bg-emerald-400/10 dark:text-emerald-400" key={`${item.runtimeProvider}-${item.version.id}`}>{runtimeProviderLabel(item.runtimeProvider)}: {item.version.name}</span>)}
             {activeModelsError ? (
               <span className="rounded-full border border-red-500/20 bg-red-500/8 px-3 py-1 text-xs font-semibold text-red-600 dark:border-red-400/25 dark:bg-red-400/10 dark:text-red-300">
                 {activeModelsError.message}
@@ -477,7 +522,7 @@ export const AiLabPage = () => {
             ) : null}
             {activeModels.length === 0 && !activeModelsQuery.isLoading && !activeModelsError ? (
               <span className="rounded-full border border-black/[0.08] bg-white/82 px-3 py-1 text-xs font-semibold text-ink/62 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300">
-                No active model overrides. Runtime will use the provider defaults.
+                No active model overrides. External API mode uses provider defaults, while Learning Engine L3 uses Internal L3 Tutor.
               </span>
             ) : null}
           </div>
@@ -494,7 +539,7 @@ export const AiLabPage = () => {
                   No model versions registered yet. Training jobs will populate this panel as they progress.
                 </div>
               ) : null}
-              {modelVersions.map((version) => <div className="rounded-2xl border border-black/[0.06] bg-white/58 p-4 dark:border-white/10 dark:bg-white/[0.03]" key={version.id}><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-semibold text-ink dark:text-slate-100">{version.name}</p><p className="mt-1 text-xs text-ink/55 dark:text-slate-400">{version.provider} / {version.fineTunedModel ?? version.baseModel}</p></div><button className="focus-ring rounded-xl border border-black/[0.08] bg-white/82 px-3 py-1.5 text-xs font-semibold text-ink transition hover:bg-white disabled:opacity-60 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200" disabled={activatingModelVersionId === version.id || version.status !== 'ready'} onClick={() => {
+              {modelVersions.map((version) => <div className="rounded-2xl border border-black/[0.06] bg-white/58 p-4 dark:border-white/10 dark:bg-white/[0.03]" key={version.id}><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-semibold text-ink dark:text-slate-100">{version.name}</p><p className="mt-1 text-xs text-ink/55 dark:text-slate-400">{modelProviderLabel(version.provider)} / {version.fineTunedModel ?? version.baseModel}</p></div><button className="focus-ring rounded-xl border border-black/[0.08] bg-white/82 px-3 py-1.5 text-xs font-semibold text-ink transition hover:bg-white disabled:opacity-60 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200" disabled={activatingModelVersionId === version.id || version.status !== 'ready'} onClick={() => {
                 if (!window.confirm(`Activate ${version.name} for the ${version.provider} runtime group?`)) {
                   return;
                 }
@@ -513,7 +558,7 @@ export const AiLabPage = () => {
                   No training jobs yet. Scaffold one from an approved dataset export to populate this queue.
                 </div>
               ) : null}
-              {trainingJobs.map((job) => <div className="rounded-2xl border border-black/[0.06] bg-white/58 p-4 dark:border-white/10 dark:bg-white/[0.03]" key={job.id}><p className="text-sm font-semibold text-ink dark:text-slate-100">{job.provider} / {job.baseModel}</p><p className="mt-1 text-xs text-ink/55 dark:text-slate-400">Status: {job.status}</p>{job.metadata?.adapter ? <p className="mt-2 text-xs leading-5 text-ink/58 dark:text-slate-400">Adapter: {String(job.metadata.adapter)}</p> : null}</div>)}
+              {trainingJobs.map((job) => <div className="rounded-2xl border border-black/[0.06] bg-white/58 p-4 dark:border-white/10 dark:bg-white/[0.03]" key={job.id}><p className="text-sm font-semibold text-ink dark:text-slate-100">{modelProviderLabel(job.provider)} / {job.baseModel}</p><p className="mt-1 text-xs text-ink/55 dark:text-slate-400">Status: {job.status}</p>{job.metadata?.adapter ? <p className="mt-2 text-xs leading-5 text-ink/58 dark:text-slate-400">Adapter: {String(job.metadata.adapter)}</p> : null}</div>)}
             </div>
           </div>
         </section>

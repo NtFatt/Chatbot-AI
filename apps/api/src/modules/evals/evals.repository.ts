@@ -1,3 +1,4 @@
+import type { ProviderKey } from '@chatbot-ai/shared';
 import type { PrismaClient } from '@prisma/client';
 
 import { prisma } from '../../config/prisma';
@@ -104,7 +105,7 @@ export class EvalsRepository {
   }
 
   createRun(input: {
-    provider: 'GEMINI' | 'OPENAI';
+    provider: ProviderKey;
     model: string;
     modelVersionId?: string | null;
     averageScore: number | null;

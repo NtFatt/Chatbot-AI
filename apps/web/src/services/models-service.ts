@@ -1,4 +1,4 @@
-import type { ModelVersion, PaginatedResponse } from '@chatbot-ai/shared';
+import type { ModelVersion, PaginatedResponse, ProviderKey } from '@chatbot-ai/shared';
 
 import { apiRequest } from './api-client';
 
@@ -8,7 +8,7 @@ export const fetchModelVersions = () =>
   });
 
 export const fetchActiveModels = () =>
-  apiRequest<PaginatedResponse<{ runtimeProvider: 'GEMINI' | 'OPENAI' | 'LOCAL'; version: ModelVersion }>>(
+  apiRequest<PaginatedResponse<{ runtimeProvider: ProviderKey | 'LOCAL'; version: ModelVersion }>>(
     '/api/models/active',
     {
       method: 'GET',

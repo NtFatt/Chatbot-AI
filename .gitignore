@@ -18,3 +18,12 @@ prisma/dev.db
 output/
 *.log
 *.tsbuildinfo
+
+# ML Workspace
+ml/datasets/*.jsonl
+ml/outputs/**
+ml/adapters/**
+*.safetensors
+*.bin
+*.pt
+*.gguf

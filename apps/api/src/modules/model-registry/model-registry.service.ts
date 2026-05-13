@@ -5,6 +5,7 @@ import type {
 } from '@chatbot-ai/shared';
 import type { ModelVersion as PrismaModelVersion, ModelVersionProvider } from '@prisma/client';
 
+import { env } from '../../config/env';
 import { AppError } from '../../utils/errors';
 import { ModelRegistryRepository } from './model-registry.repository';
 
@@ -14,6 +15,8 @@ const runtimeGroupByProvider = (
   provider: SharedModelVersionProvider,
 ): SharedModelVersionProvider[] => {
   switch (provider) {
+    case 'internal_l3_tutor':
+      return ['internal_l3_tutor'];
     case 'gemini':
       return ['gemini'];
     case 'openai':
@@ -41,6 +44,42 @@ const toSharedModelVersion = (version: PrismaModelVersion): ModelVersion => ({
 export class ModelRegistryService {
   constructor(private readonly repository: ModelRegistryRepository) {}
 
+  private async ensureDefaultInternalTutorVersion(): Promise<PrismaModelVersion> {
+    const existingActive = await this.repository.findActiveByProviders(['internal_l3_tutor']);
+    if (existingActive) {
+      return existingActive;
+    }
+
+    const existing = await this.repository.findFirstByProviderAndBaseModel(
+      'internal_l3_tutor',
+      env.L3_INTERNAL_MODEL_NAME,
+    );
+
+    const version =
+      existing?.status === 'ready'
+        ? existing
+        :
+      (await this.repository.create({
+        name: 'Internal L3 Tutor',
+        provider: 'internal_l3_tutor',
+        baseModel: env.L3_INTERNAL_MODEL_NAME,
+        status: 'ready',
+        isActive: false,
+        metadata: {
+          kind: 'internal_policy_model',
+          runtimeMode: 'learning_engine_l3',
+          managedBy: 'system',
+          level: 3,
+        },
+      }));
+
+    if (!version.isActive) {
+      return this.repository.activate(version.id, ['internal_l3_tutor']);
+    }
+
+    return version;
+  }
+
   async getVersionById(id: string): Promise<ModelVersion> {
     const version = await this.repository.findById(id);
     if (!version) {
@@ -51,11 +90,13 @@ export class ModelRegistryService {
   }
 
   async listVersions(): Promise<ModelVersion[]> {
+    await this.ensureDefaultInternalTutorVersion();
     const versions = await this.repository.listVersions();
     return versions.map(toSharedModelVersion);
   }
 
   async listActiveVersions(): Promise<ModelVersion[]> {
+    await this.ensureDefaultInternalTutorVersion();
     const versions = await this.repository.listActiveVersions();
     return versions.map(toSharedModelVersion);
   }
@@ -100,10 +141,32 @@ export class ModelRegistryService {
     return toSharedModelVersion(activated);
   }
 
+  async getActiveLearningEngineModel(): Promise<ModelVersion | null> {
+    await this.ensureDefaultInternalTutorVersion();
+    const versions = await this.repository.listVersions();
+    const active =
+      versions.find(
+        (version) =>
+          version.isActive &&
+          version.status === 'ready' &&
+          typeof (version.metadata as Record<string, unknown> | null)?.runtimeMode === 'string' &&
+          (version.metadata as Record<string, unknown>).runtimeMode === 'learning_engine_l3',
+      ) ?? null;
+    return active ? toSharedModelVersion(active) : null;
+  }
+
   async getActiveModelForRuntime(provider: ProviderKey): Promise<{
     modelVersionId: string | null;
     model: string | null;
   }> {
+    if (provider === 'internal_l3_tutor') {
+      const internal = await this.ensureDefaultInternalTutorVersion();
+      return {
+        modelVersionId: internal.id,
+        model: internal.fineTunedModel ?? internal.baseModel,
+      };
+    }
+
     const active =
       provider === 'GEMINI'
         ? await this.repository.findActiveByProviders(['gemini'])
@@ -130,7 +193,9 @@ export class ModelRegistryService {
 
     return versions.map((version) => ({
       runtimeProvider:
-        version.provider === 'gemini'
+        version.provider === 'internal_l3_tutor'
+          ? 'internal_l3_tutor'
+          : version.provider === 'gemini'
           ? 'GEMINI'
           : version.provider === 'openai' || version.provider === 'fine_tuned_openai'
             ? 'OPENAI'

@@ -1,4 +1,5 @@
-import type { LearningInsightsResponse, MaterialLevel, ChatSessionSummary } from '@chatbot-ai/shared';
+import type { AiRuntimeMode, LearningInsightsResponse, MaterialLevel, ChatSessionSummary } from '@chatbot-ai/shared';
+import { DEFAULT_AI_RUNTIME_MODE } from '@chatbot-ai/shared';
 import type { PrismaClient, Prisma } from '@prisma/client';
 
 import { prisma } from '../../config/prisma';
@@ -26,6 +27,7 @@ const mapSessionSummary = (session: SessionSummaryRow): ChatSessionSummary => ({
   id: session.id,
   title: session.title,
   providerPreference: session.providerPreference,
+  aiRuntimeMode: (session.aiRuntimeMode ?? DEFAULT_AI_RUNTIME_MODE) as AiRuntimeMode,
   contextSummary: session.contextSummary,
   isPinned: session.isPinned,
   pinnedAt: session.pinnedAt ? toIso(session.pinnedAt) : null,

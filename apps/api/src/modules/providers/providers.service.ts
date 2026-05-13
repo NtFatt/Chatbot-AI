@@ -1,13 +1,14 @@
 import type {
   ProviderHealthState,
+  ExternalProviderKey,
   ProviderKey,
   ProviderRuntimeStatus,
 } from '@chatbot-ai/shared';
 import {
   DEFAULT_PROVIDER,
+  EXTERNAL_PROVIDER_KEYS,
   FALLBACK_PROVIDER,
   PROVIDER_DEFAULT_MODELS,
-  PROVIDER_KEYS,
 } from '@chatbot-ai/shared';
 
 import { prisma } from '../../config/prisma';
@@ -19,7 +20,7 @@ import type { ModelRegistryService } from '../model-registry/model-registry.serv
 type RuntimeSource = 'db' | 'env' | 'default';
 
 export interface ProviderDescriptor {
-  key: ProviderKey;
+  key: ExternalProviderKey;
   enabled: boolean;
   configured: boolean;
   isPrimary: boolean;
@@ -39,7 +40,7 @@ export interface ProviderConnectivityDescriptor extends ProviderDescriptor {
   latencyMs: number | null;
 }
 
-const providerKeyToEnv = (provider: ProviderKey) =>
+const providerKeyToEnv = (provider: ExternalProviderKey) =>
   provider === 'GEMINI'
     ? {
         apiKey: env.GEMINI_API_KEY,
@@ -64,7 +65,7 @@ export class ProvidersService {
     const dbConfigs = await prisma.aiProviderConfig.findMany();
     const byKey = new Map(dbConfigs.map((item) => [item.provider as ProviderKey, item]));
 
-    const providers = await Promise.all(PROVIDER_KEYS.map(async (key) => {
+    const providers = await Promise.all(EXTERNAL_PROVIDER_KEYS.map(async (key) => {
       const envConfig = providerKeyToEnv(key);
       const dbConfig = byKey.get(key);
       const health = this.providerHealthService.snapshot(key);
@@ -99,22 +100,25 @@ export class ProvidersService {
 
   private resolveProviderOrder(
     providers: ProviderDescriptor[],
-    preferred: ProviderKey | null | undefined,
-    fallback: ProviderKey | null | undefined,
+    preferred: ExternalProviderKey | null | undefined,
+    fallback: ExternalProviderKey | null | undefined,
   ) {
     const availableProviders = providers.filter((provider) => provider.enabled && provider.configured);
     const availableKeys = new Set(availableProviders.map((provider) => provider.key));
 
     const defaultProvider =
       [preferred, env.AI_PRIMARY_PROVIDER, DEFAULT_PROVIDER]
-        .filter((candidate): candidate is ProviderKey => Boolean(candidate))
+        .filter((candidate): candidate is ExternalProviderKey => Boolean(candidate))
         .find((candidate) => availableKeys.has(candidate)) ??
       availableProviders[0]?.key ??
       env.AI_PRIMARY_PROVIDER;
 
     const fallbackProvider =
       [fallback, env.AI_FALLBACK_PROVIDER, FALLBACK_PROVIDER]
-        .filter((candidate): candidate is ProviderKey => Boolean(candidate) && candidate !== defaultProvider)
+        .filter(
+          (candidate): candidate is ExternalProviderKey =>
+            Boolean(candidate) && candidate !== defaultProvider,
+        )
         .find((candidate) => availableKeys.has(candidate)) ??
       availableProviders.find((provider) => provider.key !== defaultProvider)?.key ??
       null;
@@ -137,8 +141,8 @@ export class ProvidersService {
   }
 
   async diagnoseProviders(
-    providersMap: Record<ProviderKey, AIProvider | null>,
-    requestedProvider?: ProviderKey,
+  providersMap: Partial<Record<ProviderKey, AIProvider | null>>,
+  requestedProvider?: ExternalProviderKey,
   ) {
     const providerState = await this.listProviders();
     const checkedAt = new Date().toISOString();

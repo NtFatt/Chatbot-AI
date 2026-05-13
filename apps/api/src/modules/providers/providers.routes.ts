@@ -8,7 +8,7 @@ import type { AIProvider } from '../../integrations/ai/ai.types';
 
 export const createProvidersRoutes = (
   providersService: ProvidersService,
-  providersMap: Record<ProviderKey, AIProvider | null>,
+  providersMap: Partial<Record<ProviderKey, AIProvider | null>>,
 ) => {
   const router = Router();
   const controller = createProvidersController(providersService, providersMap);

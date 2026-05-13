@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { ChatMessage } from '@chatbot-ai/shared';
 
+import { env } from '../src/config/env';
 import { SessionIntelligenceService } from '../src/modules/chat/session-intelligence.service';
 
 const makeMessage = (index: number): ChatMessage => ({
@@ -71,9 +72,39 @@ describe('SessionIntelligenceService', () => {
     expect(result.subjectLabel).toBe('Hệ quản trị cơ sở dữ liệu');
     expect(result.topicLabel).toBe('Chuẩn hóa dữ liệu');
     expect(result.levelLabel).toBe('beginner');
-    expect(result.confidenceScore).toBeNull();
+    expect(result.confidenceScore).toBe(0.78);
     expect(result.titleSuggestion).toBeTruthy();
     expect(result.warnings).toContain('Turn intelligence fell back to retrieval heuristics.');
+  });
+
+  it('uses local heuristics in learning_engine_l3 without calling structured output', async () => {
+    const generate = vi.fn();
+    const service = new SessionIntelligenceService({ generate } as never);
+    const originalFlag = env.L3_ALLOW_EXTERNAL_FALLBACK;
+    env.L3_ALLOW_EXTERNAL_FALLBACK = false;
+
+    const result = await service.inferTurnMetadata({
+      userId: 'user-1',
+      sessionId: 'session-1',
+      aiRuntimeMode: 'learning_engine_l3',
+      sessionProvider: 'GEMINI',
+      language: 'vi',
+      currentTitle: 'Tro chuyen moi / New study chat',
+      question: 'Giải thích tính đóng gói trong Java',
+      answer: 'Tính đóng gói giúp che giấu dữ liệu nội bộ.',
+      retrievalSnapshot: {
+        inferredSubject: 'Lập trình Java',
+        inferredTopic: 'Tính đóng gói',
+        queryExpansion: ['encapsulation'],
+        materials: [],
+      },
+    });
+
+    env.L3_ALLOW_EXTERNAL_FALLBACK = originalFlag;
+
+    expect(generate).not.toHaveBeenCalled();
+    expect(result.topicLabel).toBe('Tính đóng gói');
+    expect(result.warnings).toContain('Turn intelligence used local L3 heuristics.');
   });
 
   it('returns null for AI session summaries on short sessions', async () => {
@@ -126,5 +157,29 @@ describe('SessionIntelligenceService', () => {
       titleSuggestion: 'Chuẩn hóa dữ liệu và JOIN',
     });
     expect(result?.warnings).toContain('Summary generated from the last 12 turns only.');
+  });
+
+  it('uses deterministic local summaries for learning_engine_l3 by default', async () => {
+    const generate = vi.fn();
+    const service = new SessionIntelligenceService({ generate } as never);
+    const originalFlag = env.L3_ALLOW_EXTERNAL_FALLBACK;
+    env.L3_ALLOW_EXTERNAL_FALLBACK = false;
+
+    const result = await service.summarizeLongSession({
+      userId: 'user-1',
+      sessionId: 'session-1',
+      aiRuntimeMode: 'learning_engine_l3',
+      sessionProvider: 'GEMINI',
+      language: 'vi',
+      currentTitle: 'Tro chuyen moi / New study chat',
+      existingSummary: null,
+      messages: Array.from({ length: 10 }, (_, index) => makeMessage(index + 1)),
+    });
+
+    env.L3_ALLOW_EXTERNAL_FALLBACK = originalFlag;
+
+    expect(generate).not.toHaveBeenCalled();
+    expect(result?.contextSummary).toBeTruthy();
+    expect(result?.warnings).toContain('Session summary used local L3 heuristics.');
   });
 });

@@ -86,4 +86,105 @@ describe('ChatMessageBubble', () => {
     expect(screen.getByText(/Thử lại sau khoảng 36 giây/i)).toBeTruthy();
     expect(screen.getByText(/OpenAI đã được dùng để trả lời thay cho Gemini/i)).toBeTruthy();
   });
+
+  it('renders the internal L3 tutor badge instead of Gemini/OpenAI metadata', () => {
+    render(
+      <ChatMessageBubble
+        message={{
+          id: 'assistant-l3',
+          sessionId: 'session-l3',
+          clientMessageId: 'assistant-l3',
+          parentClientMessageId: 'user-l3',
+          senderType: 'assistant',
+          content: 'Internal L3 content',
+          status: 'sent',
+          provider: 'internal_l3_tutor',
+          model: 'internal-l3-tutor-v1',
+          modelVersionId: 'mv-internal',
+          aiRuntimeMode: 'learning_engine_l3',
+          learningEngineUsed: true,
+          externalFallbackUsed: false,
+          providerRequestId: null,
+          responseFinishReason: 'stop',
+          latencyMs: 12,
+          inputTokens: null,
+          outputTokens: null,
+          totalTokens: null,
+          confidenceScore: 0.82,
+          confidenceLevel: 'high',
+          subjectLabel: null,
+          topicLabel: null,
+          levelLabel: null,
+          fallbackUsed: false,
+          retrievalSnapshot: {
+            queryExpansion: [],
+            materials: [],
+            aiRuntimeMode: 'learning_engine_l3',
+            executionProvider: 'internal_l3_tutor',
+            executionModel: 'internal-l3-tutor-v1',
+            learningEngineUsed: true,
+            externalFallbackUsed: false,
+            modelVersionId: 'mv-internal',
+          },
+          errorCode: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }}
+      />,
+    );
+
+    expect(screen.getByText('AI học tập Level 3')).toBeTruthy();
+    expect(screen.getByText('L3 Tutor Model')).toBeTruthy();
+    expect(screen.queryByText(/^GEMINI$/i)).toBeNull();
+  });
+
+  it('renders fallback wording when L3 uses an external provider fallback', () => {
+    render(
+      <ChatMessageBubble
+        message={{
+          id: 'assistant-l3-fallback',
+          sessionId: 'session-l3',
+          clientMessageId: 'assistant-l3-fallback',
+          parentClientMessageId: 'user-l3',
+          senderType: 'assistant',
+          content: 'Fallback content',
+          status: 'sent',
+          provider: 'GEMINI',
+          model: 'gemini-2.5-flash',
+          modelVersionId: null,
+          aiRuntimeMode: 'learning_engine_l3',
+          learningEngineUsed: true,
+          externalFallbackUsed: true,
+          providerRequestId: null,
+          responseFinishReason: 'stop',
+          latencyMs: 40,
+          inputTokens: null,
+          outputTokens: null,
+          totalTokens: null,
+          confidenceScore: null,
+          confidenceLevel: null,
+          subjectLabel: null,
+          topicLabel: null,
+          levelLabel: null,
+          fallbackUsed: true,
+          fallbackInfo: null,
+          retrievalSnapshot: {
+            queryExpansion: [],
+            materials: [],
+            aiRuntimeMode: 'learning_engine_l3',
+            executionProvider: 'GEMINI',
+            executionModel: 'gemini-2.5-flash',
+            learningEngineUsed: true,
+            externalFallbackUsed: true,
+          },
+          errorCode: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }}
+      />,
+    );
+
+    expect(screen.getByText('L3 fallback · GEMINI')).toBeTruthy();
+    expect(screen.getByText(/^fallback$/i)).toBeTruthy();
+  });
 });

@@ -1,4 +1,5 @@
 export type ModelVersionProvider =
+  | 'internal_l3_tutor'
   | 'gemini'
   | 'openai'
   | 'fine_tuned_openai'

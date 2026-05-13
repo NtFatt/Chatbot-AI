@@ -1,6 +1,7 @@
 import { Suspense, lazy, startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { ArtifactContent, ArtifactGenerateType, ArtifactType, ChatMessage, ChatSessionSummary, ProviderKey, ReviewSelfAssessment, StudyArtifact } from '@chatbot-ai/shared';
+import type { AiRuntimeMode, ArtifactContent, ArtifactGenerateType, ArtifactType, ChatMessage, ChatSessionSummary, ProviderKey, ReviewSelfAssessment, StudyArtifact } from '@chatbot-ai/shared';
+import { DEFAULT_AI_RUNTIME_MODE, AI_RUNTIME_MODE_LABELS } from '@chatbot-ai/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BarChart3, Library, Menu, Settings2, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -518,12 +519,18 @@ export const DashboardPage = () => {
       };
     }) => updateSession(sessionId, input),
     onSuccess: (session) => {
+      setSessionsList((prev) =>
+        prev.map((item) => (item.id === session.id ? { ...item, ...session } : item)),
+      );
       queryClient.setQueryData(
         queryKeys.sessions,
-        (previous: { items: ChatSessionSummary[]; total: number } | undefined) => ({
-          items: (previous?.items ?? []).map((item) => (item.id === session.id ? { ...item, ...session } : item)),
-          total: previous?.total ?? 0,
-        }),
+        (previous: SessionListResult | undefined) => {
+          if (!previous) return previous;
+          return {
+            ...previous,
+            items: previous.items.map((item) => (item.id === session.id ? { ...item, ...session } : item)),
+          };
+        },
       );
       queryClient.setQueryData(
         queryKeys.archivedSessions,
@@ -532,6 +539,30 @@ export const DashboardPage = () => {
           total: previous?.total ?? 0,
         }),
       );
+    },
+  });
+
+  const runtimeModeMutation = useMutation({
+    mutationFn: ({ sessionId, aiRuntimeMode }: { sessionId: string; aiRuntimeMode: AiRuntimeMode }) =>
+      updateSession(sessionId, { aiRuntimeMode }),
+    onSuccess: (session) => {
+      setSessionsList((prev) =>
+        prev.map((item) => (item.id === session.id ? { ...item, ...session } : item)),
+      );
+      queryClient.setQueryData(
+        queryKeys.sessions,
+        (previous: SessionListResult | undefined) => {
+          if (!previous) return previous;
+          return {
+            ...previous,
+            items: previous.items.map((item) => (item.id === session.id ? { ...item, ...session } : item)),
+          };
+        },
+      );
+      toast.success(`Chế độ AI: ${AI_RUNTIME_MODE_LABELS[session.aiRuntimeMode].vi}`);
+    },
+    onError: () => {
+      toast.error('Không thể đổi chế độ AI. Vui lòng thử lại.');
     },
   });
 
@@ -1114,6 +1145,14 @@ export const DashboardPage = () => {
               size="sm"
               tooltip="Settings"
             />
+            {currentSession && (
+              <span
+                className="hidden items-center gap-1 rounded-full border border-ocean/20 bg-ocean/[0.06] px-2.5 py-1 text-[10px] font-semibold text-ocean sm:inline-flex dark:border-cyan/20 dark:bg-cyan/[0.06] dark:text-cyan"
+                data-testid="runtime-mode-badge"
+              >
+                Mode: {AI_RUNTIME_MODE_LABELS[currentSession.aiRuntimeMode ?? DEFAULT_AI_RUNTIME_MODE].vi}
+              </span>
+            )}
           </div>
 
           <div className="flex h-full min-h-0 flex-col pt-14 lg:pt-0">
@@ -1392,6 +1431,7 @@ export const DashboardPage = () => {
 
       <WorkspaceSettingsSheet
         activeProvider={activeProvider}
+        aiRuntimeMode={currentSession?.aiRuntimeMode ?? DEFAULT_AI_RUNTIME_MODE}
         connectionState={connectionState}
         currentSession={currentSession}
         diagnostics={providerDiagnosticsQuery.data ?? null}
@@ -1400,6 +1440,7 @@ export const DashboardPage = () => {
         draftTitle={draftTitle}
         hasExternalProviders={hasExternalProviders}
         isOpen={settingsOpen}
+        isRuntimeModePending={runtimeModeMutation.isPending}
         isSavingTitle={updateSessionMutation.isPending}
         onClose={() => setSettingsOpen(false)}
         onDraftTitleChange={setDraftTitle}
@@ -1414,6 +1455,21 @@ export const DashboardPage = () => {
           updateSessionMutation.mutate({
             sessionId: currentSession.id,
             input: { providerPreference: provider },
+          });
+        }}
+        onRuntimeModeChange={(mode) => {
+          const currentRuntimeMode = currentSession?.aiRuntimeMode ?? DEFAULT_AI_RUNTIME_MODE;
+
+          if (!currentSession) {
+            toast.error("Hãy tạo hoặc chọn một phiên học trước khi đổi chế độ AI.");
+            return;
+          }
+
+          if (mode === currentRuntimeMode) return;
+
+          runtimeModeMutation.mutate({
+            sessionId: currentSession.id,
+            aiRuntimeMode: mode,
           });
         }}
         onRunDiagnostics={() => providerDiagnosticsQuery.refetch()}

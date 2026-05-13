@@ -1,3 +1,4 @@
+import type { ModelVersionProvider } from '@chatbot-ai/shared';
 import type { PrismaClient } from '@prisma/client';
 
 import { prisma } from '../../config/prisma';
@@ -152,7 +153,7 @@ export class TrainingRepository {
 
   createJob(input: {
     datasetId: string;
-    provider: 'gemini' | 'openai' | 'fine_tuned_openai' | 'local_ollama' | 'local_lora';
+    provider: ModelVersionProvider;
     baseModel: string;
   }) {
     return this.db.trainingJob.create({

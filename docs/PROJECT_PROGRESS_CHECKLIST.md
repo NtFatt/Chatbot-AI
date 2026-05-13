@@ -1,6 +1,6 @@
 # Chatbot AI - Project Progress Checklist
 
-**Last updated:** 2026-05-11  
+**Last updated:** 2026-05-13  
 **Repository:** `D:\LEARNCODE\Project_CV\Chatbot AI`  
 **Release status:** NOT RELEASE READY
 
@@ -9,10 +9,10 @@
 | Field | Value |
 | --- | --- |
 | Project | Chatbot AI - Vietnamese Study Assistant |
-| Overall status | All planned phases (0–7C, AI-L3A–D) are source-complete and automation-validated. Prisma migrations apply cleanly. Uncommitted working-tree changes contain the full AI-L3 learning engine, AI Lab, and stabilization work. |
-| Current active task | `[~]` Run a human browser smoke on the normal dev stack and capture one real provider-backed happy path beyond mocked/fallback automation. |
-| Next recommended task | Start `pnpm dev` or `pnpm dev:api` + `pnpm dev:web`, then run one exploratory smoke: login → ask a Vietnamese study question → generate/edit/refine artifact → open AI Lab → create/export dataset → run eval → verify model activation panel. |
-| Risks / blockers | `[ ]` Manual browser smoke has not been completed. `[~]` Provider-backed smoke is partial: `pnpm ai:doctor` confirms Gemini and OpenAI are configured, but no fully accepted live end-to-end provider pass was recorded. `[~]` Direct local boot via `node apps/api/dist/server.js` did not load `apps/api/.env` in this workspace, so runtime validation should use `pnpm dev:api` or the E2E stack. `[~]` Significant working-tree changes are uncommitted. |
+| Overall status | All planned phases (0–7C, AI-L3A–E) are source-complete and automation-validated. `learning_engine_l3` now defaults to the internal provider `internal_l3_tutor`, 12 Prisma migrations apply cleanly, and the new runtime path is browser-validated on the normal dev stack. |
+| Current active task | `[~]` Commit the uncommitted working-tree changes covering the AI-L3E Runtime Mode Switch and the recent UI logic bug fixes. |
+| Next recommended task | Stabilize the normal dev-stack realtime transport so manual smoke no longer shows `Realtime disconnected. Using fallback.` while the HTTP fallback path is working. |
+| Risks / blockers | `[~]` Local worktree changes are still uncommitted. `[~]` Manual smoke succeeded, but the normal dev stack still showed `Realtime disconnected. Using fallback.` while chat requests completed successfully. `[~]` Direct `node apps/api/dist/server.js` from the repo root is still not the standardized env-loading path for this workspace. |
 
 ## 2. Progress Legend
 
@@ -44,26 +44,38 @@
 | AI-L3B - Training Dataset Manager | `[x] DONE` | Completed: `TrainingDataset` / `TrainingExample` schema, dataset/example CRUD, approve/reject, canonical exporters, training-job route, and AI Lab dataset workspace.<br>Files/modules: `apps/api/src/modules/training/*`, `apps/web/src/features/ai-lab/AiLabPage.tsx`, `apps/web/src/services/training-service.ts`, `packages/shared/src/schemas/training.ts`, `packages/shared/src/types/training.ts`, `prisma/schema.prisma`, `prisma/migrations/20260508233000_phase_ai_l3_learning_engine/migration.sql`.<br>Validated: `apps/api/test/training.repository.test.ts`, `apps/api/test/training.routes.test.ts`, `apps/api/test/training.service.test.ts`, `apps/web/test/ai-lab-page.test.tsx`, `pnpm db:migrate`, `pnpm test`, `pnpm build`. |
 | AI-L3C - Evaluation Harness | `[x] DONE` | Completed: `EvalCase` / `EvalRun` / `EvalRunResult` schema, eval case CRUD, benchmark run endpoint, heuristic scoring, persisted results, and AI Lab eval views.<br>Files/modules: `apps/api/src/modules/evals/*`, `apps/api/src/integrations/ai/model-gateway.service.ts`, `apps/web/src/features/ai-lab/AiLabPage.tsx`, `apps/web/src/services/evals-service.ts`, `packages/shared/src/schemas/evals.ts`, `packages/shared/src/types/evals.ts`, `prisma/schema.prisma`, `prisma/migrations/20260508233000_phase_ai_l3_learning_engine/migration.sql`.<br>Validated: `apps/api/test/evals.routes.test.ts`, `apps/api/test/evals.service.test.ts`, `apps/web/test/ai-lab-page.test.tsx`, `pnpm db:migrate`, `pnpm test`, `pnpm build`. |
 | AI-L3D - Model Registry + Fine-Tune Adapter | `[x] DONE` | Completed: `ModelVersion` / `TrainingJob` schema, registry routes, model gateway wiring, `modelVersionId` propagation, OpenAI fine-tune skeleton, Local LoRA stub, and AI Lab model panel.<br>Files/modules: `apps/api/src/modules/model-registry/*`, `apps/api/src/integrations/ai/fine-tune/*`, `apps/api/src/integrations/ai/model-gateway.service.ts`, `apps/api/src/modules/providers/providers.service.ts`, `apps/api/src/integrations/ai/ai-orchestrator.service.ts`, `apps/api/src/modules/chat/chat.service.ts`, `apps/web/src/features/ai-lab/AiLabPage.tsx`, `apps/web/src/services/models-service.ts`, `packages/shared/src/schemas/models.ts`, `packages/shared/src/types/models.ts`, `prisma/schema.prisma`, `prisma/migrations/20260508233000_phase_ai_l3_learning_engine/migration.sql`.<br>Validated: `apps/api/test/model-registry.service.test.ts`, `apps/api/test/fine-tune-adapters.test.ts`, `apps/web/test/ai-lab-page.test.tsx`, `pnpm db:migrate`, `pnpm test`, `pnpm build`. |
+| AI-L3E - Runtime Mode Switch | `[x] DONE` | Completed: per-session `aiRuntimeMode` plus an internal Level 3 provider path (`internal_l3_tutor`), `InternalL3TutorModelService`, `L3_ALLOW_EXTERNAL_FALLBACK=false` by default, health/doctor diagnostics for the L3 runtime, UI badge wording for internal vs external fallback, and AI Lab visibility for the internal model while filtering non-benchmarkable versions from eval selection. Fixed silent UI failures on mode switch (disabled controls when no session is active, added toast notifications).<br>Files/modules: `packages/shared/src/constants/providers.ts`, `packages/shared/src/schemas/ai-runtime.ts`, `packages/shared/src/types/ai-runtime.ts`, `packages/shared/src/schemas/chat.ts`, `packages/shared/src/schemas/evals.ts`, `packages/shared/src/schemas/models.ts`, `packages/shared/src/types/chat.ts`, `packages/shared/src/types/materials.ts`, `packages/shared/src/types/models.ts`, `apps/api/src/config/env.ts`, `apps/api/src/integrations/ai/ai-runtime-router.service.ts`, `apps/api/src/integrations/ai/internal-l3-tutor-model.service.ts`, `apps/api/src/integrations/ai/local-study-fallback.ts`, `apps/api/src/modules/chat/chat.service.ts`, `apps/api/src/modules/chat/session-intelligence.service.ts`, `apps/api/src/modules/model-registry/model-registry.service.ts`, `apps/api/src/app.ts`, `apps/web/src/components/chat/ProviderBadge.tsx`, `apps/web/src/components/layout/WorkspaceSettingsSheet.tsx`, `apps/web/src/features/ai-lab/AiLabPage.tsx`, `apps/web/src/features/dashboard/DashboardPage.tsx`, `apps/web/src/services/chat-service.ts`, `apps/web/src/services/models-service.ts`, `scripts/ai-doctor.mjs`, `prisma/schema.prisma`, `prisma/migrations/20260512000000_add_session_ai_runtime_mode/migration.sql`, `prisma/migrations/20260513083000_add_internal_l3_tutor_provider/migration.sql`.<br>Validated: `apps/api/test/ai-runtime-router.test.ts`, `apps/api/test/model-registry.service.test.ts`, `apps/api/test/session-intelligence.service.test.ts`, `apps/web/test/chat-message-bubble.test.tsx`, `apps/web/test/workspace-settings-sheet.test.tsx`, `apps/web/test/ai-lab-page.test.tsx`, `pnpm exec prisma validate --schema prisma/schema.prisma`, `pnpm exec prisma migrate status --schema prisma/schema.prisma`, `pnpm exec prisma generate --schema prisma/schema.prisma`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm test:e2e`, `pnpm ai:doctor`, and a browser smoke on `pnpm dev:api` + `pnpm dev:web` that verified `Internal L3 Tutor` in L3 mode and `GEMINI / gemini-2.5-flash` after switching back to External API mode. |
 
 ## 4. Validation Snapshot
 
 | Check | Status | Evidence |
 | --- | --- | --- |
-| Prisma schema validation | `[x] DONE` | `pnpm exec prisma validate --schema prisma/schema.prisma` → `The schema at prisma\schema.prisma is valid 🚀` (2026-05-11). |
-| Lint | `[x] DONE` | `pnpm lint` passed for shared, API, and web packages (2026-05-11). |
-| Typecheck | `[x] DONE` | `pnpm typecheck` passed for shared, API, and web packages (2026-05-11). |
-| Unit/component tests | `[x] DONE` | `pnpm test` passed: API `26` files / `145` tests, web `16` files / `130` tests, total `42` files / `275` tests (2026-05-11). |
-| Build | `[x] DONE` | `pnpm build` passed for shared, API, and web packages (2026-05-11). |
-| Playwright E2E | `[x] DONE` | `pnpm test:e2e` passed `6/6` specs across 4 spec files. `tests/e2e/study-workspace.spec.ts` forces deterministic HTTP fallback for the mocked assistant-response path. |
-| AI doctor | `[x] DONE` | `pnpm ai:doctor` reported `GEMINI` configured with `gemini-2.5-flash` and `OPENAI` configured with `gpt-5.4-mini`; `/health` was not running at doctor time. |
-| Manual browser smoke | `[ ] NOT STARTED` | No human browser pass was run. |
-| Provider-backed smoke | `[~] IN PROGRESS` | Real provider credentials are present, but a live exploratory happy path was not captured as a clean pass. |
+| Prisma schema validation | `[x] DONE` | `pnpm exec prisma validate --schema prisma/schema.prisma` → valid schema (2026-05-13). |
+| Prisma migrate status | `[x] DONE` | `pnpm exec prisma migrate status --schema prisma/schema.prisma` → database schema is up to date with `12` migrations (2026-05-13). |
+| Prisma generate | `[x] DONE` | `pnpm exec prisma generate --schema prisma/schema.prisma` passed after stopping a lingering Vite process that held `query_engine-windows.dll.node` (2026-05-13). |
+| Lint | `[x] DONE` | `pnpm lint` passed for shared, API, and web (2026-05-13). |
+| Typecheck | `[x] DONE` | `pnpm typecheck` passed for shared, API, and web (2026-05-13). |
+| Unit/component tests | `[x] DONE` | `pnpm test` passed: API `27` files / `156` tests, web `17` files / `136` tests, total `44` files / `292` tests (2026-05-13). |
+| Build | `[x] DONE` | `pnpm build` passed for shared declarations, API `tsup`, and web `vite build` (2026-05-13). |
+| Playwright E2E | `[x] DONE` | `pnpm test:e2e` passed `6/6` specs on 2026-05-13. |
+| AI doctor | `[x] DONE` | `pnpm ai:doctor` reported both real providers configured and `/health` reachable with `l3InternalModel=enabled`, `l3InternalModelName=internal-l3-tutor-v1`, and `l3ExternalFallbackAllowed=false` (2026-05-13). |
+| Manual browser smoke | `[x] DONE` | On `pnpm dev:api` + `pnpm dev:web`: guest login succeeded, session mode switched to `AI học tập Level 3`, the question `Giải thích lập trình hướng đối tượng trong Java cho người mới học, có ví dụ ngắn.` returned an answer marked `AI học tập Level 3 / L3 Tutor Model`, mode switched back to `API AI lớn`, and the follow-up question `Cho ví dụ Java ngắn minh hoạ tính đóng gói trong OOP.` returned a real Gemini answer. `/health` and AI Lab model visibility were also verified (2026-05-13). |
+| Provider-backed smoke | `[x] DONE` | External API mode produced a live provider-backed response labeled `GEMINI / gemini-2.5-flash` during the manual browser smoke on 2026-05-13. |
 
 ## 5. Open / Deferred Work
 
 | Status | Item | Evidence / current limit |
 | --- | --- | --- |
-| `[~]` | Uncommitted working-tree changes | `git status` shows significant uncommitted changes across 60+ files covering AI-L3 engine, AI Lab, fine-tune adapters, training/eval modules, and stabilization work. Should be committed and pushed. |
-| `[ ]` | Manual browser smoke on standard dev stack | `pnpm test:e2e` is green, but no human run through `pnpm dev` or `pnpm dev:api` + `pnpm dev:web` was completed. |
-| `[~]` | Provider-backed exploratory smoke | `pnpm ai:doctor` confirms both real providers are configured, but no final accepted live ask → artifact → refine → eval happy path was recorded. |
-| `[~]` | Standalone built API boot note | Direct `node apps/api/dist/server.js` from repo root did not resolve `apps/api/.env` in this workspace; use `pnpm dev:api` or the E2E stack for validation until runtime env loading is standardized for built output. |
+| `[~]` | Uncommitted working-tree changes | The internal L3 runtime work remains local in the current worktree and has not been committed or pushed yet. |
+| `[~]` | Realtime transport on normal dev stack | Manual smoke on `pnpm dev:api` + `pnpm dev:web` completed successfully, but the workspace still showed `Realtime disconnected. Using fallback.` while HTTP chat requests worked. WebSocket/realtime transport was not validated as healthy in the same pass. |
+| `[~]` | Standalone built API boot note | Direct `node apps/api/dist/server.js` from the repo root is still not the standardized env-loading path for this workspace; use `pnpm dev:api`, `pnpm dev`, or the E2E stack for validation until built-output startup is normalized. |
+
+## 6. Documentation
+
+| Document | Status | Notes |
+| --- | --- | --- |
+| `docs/PHASED_DELIVERY_PLAN.md` | `[x]` | Full phase plan covering phases 0–7C and AI-L3A–D. |
+| `docs/REAL_AI_SETUP.md` | `[x]` | Provider setup instructions for Gemini/OpenAI. |
+| `docs/AI_LEVEL_3_RUNTIME_NOTES.md` | `[x]` | Updated 2026-05-13 for the internal `internal_l3_tutor` runtime, opt-in external fallback, metadata contract, and health/diagnostics fields. |
+| `docs/RUNTIME_RUNBOOK.md` | `[x]` | Updated 2026-05-13 with supported boot commands, L3 env flags, manual smoke steps, and the current AI Lab/eval limitations. |
+| `docs/PROJECT_PROGRESS_CHECKLIST.md` | `[x]` | This file. Updated 2026-05-13. |

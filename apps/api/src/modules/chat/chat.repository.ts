@@ -210,9 +210,14 @@ export class ChatRepository {
     return sessions;
   }
 
-  async createSession(input: { userId: string; title: string; providerPreference: ProviderKey }) {
+  async createSession(input: { userId: string; title: string; providerPreference: ProviderKey; aiRuntimeMode?: string }) {
     return prisma.chatSession.create({
-      data: input,
+      data: {
+        userId: input.userId,
+        title: input.title,
+        providerPreference: input.providerPreference,
+        aiRuntimeMode: input.aiRuntimeMode ?? 'external_api',
+      },
     });
   }
 
@@ -221,6 +226,7 @@ export class ChatRepository {
     userId: string;
     title?: string;
     providerPreference?: ProviderKey;
+    aiRuntimeMode?: string;
     contextSummary?: string | null;
     isPinned?: boolean;
     isArchived?: boolean;
@@ -231,6 +237,7 @@ export class ChatRepository {
       data: {
         title: input.title,
         providerPreference: input.providerPreference,
+        aiRuntimeMode: input.aiRuntimeMode,
         contextSummary: input.contextSummary,
         ...(input.isPinned !== undefined && {
           isPinned: input.isPinned,

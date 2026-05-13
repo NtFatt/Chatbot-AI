@@ -247,4 +247,68 @@ describe('AiLabPage', () => {
       expect(vi.mocked(approveTrainingExample).mock.calls[0]?.[0]).toBe('example-1');
     });
   });
+
+  it('shows the internal L3 model in the registry and hides it from the eval benchmark selector', async () => {
+    vi.mocked(fetchTrainingDatasets).mockResolvedValue({ items: [], total: 0 });
+    vi.mocked(fetchTrainingExamples).mockResolvedValue({ items: [], total: 0 });
+    vi.mocked(fetchTrainingJobs).mockResolvedValue({ items: [], total: 0 });
+    vi.mocked(fetchEvalCases).mockResolvedValue({ items: [], total: 0 });
+    vi.mocked(fetchEvalRuns).mockResolvedValue({ items: [], total: 0 });
+    vi.mocked(fetchModelVersions).mockResolvedValue({
+      items: [
+        {
+          id: 'model-internal',
+          name: 'Internal L3 Tutor',
+          provider: 'internal_l3_tutor',
+          baseModel: 'internal-l3-tutor-v1',
+          fineTunedModel: null,
+          status: 'ready',
+          isActive: true,
+          metadata: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          id: 'model-openai-ft',
+          name: 'OpenAI FT',
+          provider: 'fine_tuned_openai',
+          baseModel: 'gpt-5.4-mini',
+          fineTunedModel: 'ft:gpt-5.4-mini:l3',
+          status: 'ready',
+          isActive: false,
+          metadata: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+      total: 2,
+    });
+    vi.mocked(fetchActiveModels).mockResolvedValue({
+      items: [
+        {
+          runtimeProvider: 'internal_l3_tutor',
+          version: {
+            id: 'model-internal',
+            name: 'Internal L3 Tutor',
+            provider: 'internal_l3_tutor',
+            baseModel: 'internal-l3-tutor-v1',
+            fineTunedModel: null,
+            status: 'ready',
+            isActive: true,
+            metadata: null,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      ],
+      total: 1,
+    });
+
+    renderPage();
+
+    await screen.findByText('Internal L3 Tutor: Internal L3 Tutor');
+    expect(screen.getByText('Internal L3 Tutor / internal-l3-tutor-v1')).toBeTruthy();
+    expect(screen.queryByRole('option', { name: 'Internal L3 Tutor (ready)' })).toBeNull();
+    expect(screen.getByRole('option', { name: 'OpenAI FT (ready)' })).toBeTruthy();
+  });
 });

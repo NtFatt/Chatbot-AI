@@ -1,17 +1,20 @@
 import type {
+  AiRuntimeMode,
   AIFallbackInfo,
   ChatAskResponse,
   ChatMessage,
   ChatSessionSummary,
+  ExternalProviderKey,
   ProviderKey,
   RetrievalSnapshot,
 } from '@chatbot-ai/shared';
+import { DEFAULT_AI_RUNTIME_MODE } from '@chatbot-ai/shared';
 import type { Prisma } from '@prisma/client';
 
 import { buildContextSummary, buildSessionTitle } from '../../utils/text';
 import { AppError } from '../../utils/errors';
 import type { AuthService } from '../auth/auth.service';
-import { AIOrchestratorService } from '../../integrations/ai/ai-orchestrator.service';
+import type { AiRuntimeRouterService } from '../../integrations/ai/ai-runtime-router.service';
 import { RetrievalService } from '../../integrations/retrieval/retrieval.service';
 import { ChatRepository } from './chat.repository';
 import { ChatGuardService } from './chat-guard.service';
@@ -29,6 +32,7 @@ const mapSession = (
   id: session.id,
   title: session.title,
   providerPreference: session.providerPreference,
+  aiRuntimeMode: (session.aiRuntimeMode ?? DEFAULT_AI_RUNTIME_MODE) as AiRuntimeMode,
   contextSummary: session.contextSummary,
   isPinned: session.isPinned,
   pinnedAt: session.pinnedAt ? toIso(session.pinnedAt) : null,
@@ -54,48 +58,52 @@ const mapMessage = (
   const retrievalSnapshot = (message.retrievalSnapshot as RetrievalSnapshot | null) ?? null;
   const fallbackInfo = (retrievalSnapshot?.fallbackInfo as AIFallbackInfo | null | undefined) ?? null;
 
-  return ({
-  id: message.id,
-  sessionId: message.sessionId,
-  clientMessageId: message.clientMessageId,
-  parentClientMessageId: message.parentClientMessageId ?? null,
-  senderType: message.senderType,
-  content: message.content,
-  status: message.status,
-  provider: message.provider ?? null,
-  model: message.model ?? null,
-  providerRequestId: message.providerRequestId ?? null,
-  responseFinishReason: message.responseFinishReason ?? null,
-  latencyMs: message.latencyMs ?? null,
-  inputTokens: message.inputTokens ?? null,
-  outputTokens: message.outputTokens ?? null,
-  totalTokens: message.totalTokens ?? null,
-  confidenceScore: message.confidenceScore ?? null,
-  confidenceLevel:
-    message.confidenceScore == null
-      ? null
-      : message.confidenceScore >= 0.75
-        ? 'high'
-        : message.confidenceScore >= 0.5
-          ? 'medium'
-          : 'low',
-  subjectLabel: message.subjectLabel ?? null,
-  topicLabel: message.topicLabel ?? null,
-  levelLabel: message.levelLabel ?? null,
-  fallbackUsed: message.fallbackUsed,
-  fallbackInfo,
-  retrievalSnapshot,
-  errorCode: message.errorCode ?? null,
-  createdAt: toIso(message.createdAt),
-  updatedAt: toIso(message.updatedAt),
-  });
+  return {
+    id: message.id,
+    sessionId: message.sessionId,
+    clientMessageId: message.clientMessageId,
+    parentClientMessageId: message.parentClientMessageId ?? null,
+    senderType: message.senderType,
+    content: message.content,
+    status: message.status,
+    provider: message.provider ?? null,
+    model: message.model ?? null,
+    providerRequestId: message.providerRequestId ?? null,
+    modelVersionId: retrievalSnapshot?.modelVersionId ?? null,
+    aiRuntimeMode: retrievalSnapshot?.aiRuntimeMode ?? null,
+    learningEngineUsed: retrievalSnapshot?.learningEngineUsed ?? false,
+    externalFallbackUsed: retrievalSnapshot?.externalFallbackUsed ?? false,
+    responseFinishReason: message.responseFinishReason ?? null,
+    latencyMs: message.latencyMs ?? null,
+    inputTokens: message.inputTokens ?? null,
+    outputTokens: message.outputTokens ?? null,
+    totalTokens: message.totalTokens ?? null,
+    confidenceScore: message.confidenceScore ?? null,
+    confidenceLevel:
+      message.confidenceScore == null
+        ? null
+        : message.confidenceScore >= 0.75
+          ? 'high'
+          : message.confidenceScore >= 0.5
+            ? 'medium'
+            : 'low',
+    subjectLabel: message.subjectLabel ?? null,
+    topicLabel: message.topicLabel ?? null,
+    levelLabel: message.levelLabel ?? null,
+    fallbackUsed: message.fallbackUsed,
+    fallbackInfo,
+    retrievalSnapshot,
+    errorCode: message.errorCode ?? null,
+    createdAt: toIso(message.createdAt),
+    updatedAt: toIso(message.updatedAt),
+  };
 };
 
 export class ChatService {
   constructor(
     private readonly chatRepository: ChatRepository,
     private readonly authService: AuthService,
-    private readonly aiOrchestrator: AIOrchestratorService,
+    private readonly aiRuntimeRouter: AiRuntimeRouterService,
     private readonly retrievalService: RetrievalService,
     private readonly chatGuardService: ChatGuardService,
     private readonly sessionIntelligenceService: SessionIntelligenceService,
@@ -172,19 +180,22 @@ export class ChatService {
     userId: string,
     input: {
       title?: string;
-      providerPreference: ProviderKey;
+      providerPreference: ExternalProviderKey;
+      aiRuntimeMode?: AiRuntimeMode;
     },
   ) {
     const session = await this.chatRepository.createSession({
       userId,
       title: input.title?.trim() || DEFAULT_SESSION_TITLE,
       providerPreference: input.providerPreference,
+      aiRuntimeMode: input.aiRuntimeMode ?? DEFAULT_AI_RUNTIME_MODE,
     });
 
     return {
       id: session.id,
       title: session.title,
       providerPreference: session.providerPreference,
+      aiRuntimeMode: (session.aiRuntimeMode ?? DEFAULT_AI_RUNTIME_MODE) as AiRuntimeMode,
       contextSummary: session.contextSummary,
       isPinned: session.isPinned,
       pinnedAt: null,
@@ -204,7 +215,8 @@ export class ChatService {
     sessionId: string,
     input: {
       title?: string;
-      providerPreference?: ProviderKey;
+      providerPreference?: ExternalProviderKey;
+      aiRuntimeMode?: AiRuntimeMode;
       isPinned?: boolean;
       isArchived?: boolean;
     },
@@ -220,6 +232,7 @@ export class ChatService {
       id: session.id,
       title: session.title,
       providerPreference: session.providerPreference,
+      aiRuntimeMode: (session.aiRuntimeMode ?? DEFAULT_AI_RUNTIME_MODE) as AiRuntimeMode,
       contextSummary: session.contextSummary,
       isPinned: session.isPinned,
       pinnedAt: session.pinnedAt ? toIso(session.pinnedAt) : null,
@@ -263,7 +276,7 @@ export class ChatService {
       sessionId: string;
       clientMessageId: string;
       message: string;
-      provider?: ProviderKey;
+      provider?: ExternalProviderKey;
     },
     callbacks?: {
       onUserMessage?: (message: ChatMessage) => void;
@@ -299,6 +312,24 @@ export class ChatService {
         ai: {
           provider: existingAssistantMessage.provider ?? session.providerPreference,
           model: existingAssistantMessage.model ?? 'unknown',
+          modelVersionId:
+            ((existingAssistantMessage.retrievalSnapshot as RetrievalSnapshot | null)?.modelVersionId as
+              | string
+              | null
+              | undefined) ?? null,
+          aiRuntimeMode:
+            ((existingAssistantMessage.retrievalSnapshot as RetrievalSnapshot | null)?.aiRuntimeMode as
+              | AiRuntimeMode
+              | null
+              | undefined) ?? null,
+          learningEngineUsed:
+            ((existingAssistantMessage.retrievalSnapshot as RetrievalSnapshot | null)?.learningEngineUsed as
+              | boolean
+              | undefined) ?? false,
+          externalFallbackUsed:
+            ((existingAssistantMessage.retrievalSnapshot as RetrievalSnapshot | null)?.externalFallbackUsed as
+              | boolean
+              | undefined) ?? false,
           providerRequestId: existingAssistantMessage.providerRequestId ?? undefined,
           contentMarkdown: existingAssistantMessage.content,
           finishReason: existingAssistantMessage.responseFinishReason ?? 'stop',
@@ -341,6 +372,7 @@ export class ChatService {
         id: updatedSession.id,
         title: updatedSession.title,
         providerPreference: updatedSession.providerPreference,
+        aiRuntimeMode: (updatedSession.aiRuntimeMode ?? DEFAULT_AI_RUNTIME_MODE) as AiRuntimeMode,
         contextSummary: updatedSession.contextSummary,
         isPinned: updatedSession.isPinned,
         pinnedAt: updatedSession.pinnedAt ? toIso(updatedSession.pinnedAt) : null,
@@ -394,9 +426,11 @@ export class ChatService {
     const releaseStream = this.chatGuardService.beginStream(userId);
 
     try {
-      const aiResult = await this.aiOrchestrator.generate({
+      const sessionRuntimeMode = (session.aiRuntimeMode ?? DEFAULT_AI_RUNTIME_MODE) as AiRuntimeMode;
+      const aiResult = await this.aiRuntimeRouter.generate({
         userId,
         sessionId: payload.sessionId,
+        aiRuntimeMode: sessionRuntimeMode,
         requestedProvider: payload.provider,
         sessionProvider: session.providerPreference,
         language: user.preferredLanguage,
@@ -416,11 +450,17 @@ export class ChatService {
       });
       const assistantRetrievalSnapshot = {
         ...(aiResult.retrievalSnapshot ?? retrievalContext),
+        aiRuntimeMode: aiResult.aiRuntimeMode ?? sessionRuntimeMode,
+        executionProvider: aiResult.provider,
+        executionModel: aiResult.model,
+        learningEngineUsed: aiResult.learningEngineUsed ?? sessionRuntimeMode === 'learning_engine_l3',
+        externalFallbackUsed: aiResult.externalFallbackUsed ?? false,
         ...(aiResult.modelVersionId ? { modelVersionId: aiResult.modelVersionId } : {}),
       } satisfies RetrievalSnapshot;
       const turnIntelligence = await this.sessionIntelligenceService.inferTurnMetadata({
         userId,
         sessionId: payload.sessionId,
+        aiRuntimeMode: sessionRuntimeMode,
         requestedProvider: payload.provider,
         sessionProvider: session.providerPreference,
         language: user.preferredLanguage,
@@ -455,6 +495,7 @@ export class ChatService {
       const summaryResult = await this.sessionIntelligenceService.summarizeLongSession({
         userId,
         sessionId: payload.sessionId,
+        aiRuntimeMode: sessionRuntimeMode,
         requestedProvider: payload.provider,
         sessionProvider: session.providerPreference,
         language: user.preferredLanguage,
@@ -477,6 +518,7 @@ export class ChatService {
         id: summarizedSession.id,
         title: summarizedSession.title,
         providerPreference: summarizedSession.providerPreference,
+        aiRuntimeMode: (summarizedSession.aiRuntimeMode ?? DEFAULT_AI_RUNTIME_MODE) as AiRuntimeMode,
         contextSummary: summarizedSession.contextSummary,
         isPinned: summarizedSession.isPinned,
         pinnedAt: summarizedSession.pinnedAt ? toIso(summarizedSession.pinnedAt) : null,
@@ -548,7 +590,7 @@ export class ChatService {
       sessionId: string;
       clientMessageId: string;
       message?: string;
-      provider?: ProviderKey;
+      provider?: ExternalProviderKey;
     },
     callbacks?: Parameters<ChatService['ask']>[2],
   ) {

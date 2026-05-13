@@ -22,6 +22,7 @@ const makeSession = (overrides: Partial<ChatSessionSummary> = {}): ChatSessionSu
   id: 'session-1',
   title: 'SQL Joins Study',
   providerPreference: 'GEMINI',
+  aiRuntimeMode: 'external_api',
   contextSummary: null,
   isPinned: false,
   pinnedAt: null,

@@ -476,6 +476,32 @@ describe('ChatController', () => {
 
       expect(res.status).toHaveBeenCalledWith(200);
     });
+
+    it('updates session aiRuntimeMode to learning_engine_l3', async () => {
+      (mockService.updateSession as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ id: 'session-1', aiRuntimeMode: 'learning_engine_l3' });
+
+      const controller = createChatController(mockService);
+      const req = createMockRequest({ params: { id: 'session-1' }, body: { aiRuntimeMode: 'learning_engine_l3' } });
+      const res = createMockResponse();
+
+      await controller.updateSession(req, res, vi.fn());
+
+      expect(mockService.updateSession).toHaveBeenCalledWith('user-1', 'session-1', { aiRuntimeMode: 'learning_engine_l3' });
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it('updates session aiRuntimeMode to external_api', async () => {
+      (mockService.updateSession as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ id: 'session-1', aiRuntimeMode: 'external_api' });
+
+      const controller = createChatController(mockService);
+      const req = createMockRequest({ params: { id: 'session-1' }, body: { aiRuntimeMode: 'external_api' } });
+      const res = createMockResponse();
+
+      await controller.updateSession(req, res, vi.fn());
+
+      expect(mockService.updateSession).toHaveBeenCalledWith('user-1', 'session-1', { aiRuntimeMode: 'external_api' });
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
   });
 
   describe('deleteSession', () => {

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { PROVIDER_KEYS } from '../constants/providers';
+import { EXTERNAL_PROVIDER_KEYS } from '../constants/providers';
 import { trainingMessageSchema } from './training';
 
 export const evalCategorySchema = z.enum([
@@ -36,7 +36,7 @@ export const evalCaseParamSchema = z.object({
 });
 
 export const createEvalRunSchema = z.object({
-  provider: z.enum(PROVIDER_KEYS).optional(),
+  provider: z.enum([...EXTERNAL_PROVIDER_KEYS, 'internal_l3_tutor', 'local_lora'] as const).optional(),
   model: z.string().trim().min(1).max(160).optional(),
   modelVersionId: z.string().uuid().optional(),
   evalCaseIds: z.array(z.string().uuid()).min(1).max(50).optional(),

@@ -153,7 +153,14 @@ export const ChatMessageBubble = ({
 
         <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-ink/45 dark:text-slate-500">
           {message.provider ? (
-            <ProviderBadge fallbackUsed={message.fallbackUsed} model={message.model} provider={message.provider} />
+            <ProviderBadge
+              aiRuntimeMode={message.aiRuntimeMode}
+              externalFallbackUsed={message.externalFallbackUsed}
+              fallbackUsed={message.fallbackUsed}
+              learningEngineUsed={message.learningEngineUsed}
+              model={message.model}
+              provider={message.provider}
+            />
           ) : null}
 
           <ScoreBadge kind="confidence" score={message.confidenceScore} />

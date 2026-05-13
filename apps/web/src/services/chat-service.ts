@@ -1,4 +1,4 @@
-import type { ChatAskResponse, ChatMessage, ChatSessionSummary, CursorPaginatedResponse, GlobalSearchResult, PaginatedResponse } from '@chatbot-ai/shared';
+import type { AiRuntimeMode, ChatAskResponse, ChatMessage, ChatSessionSummary, CursorPaginatedResponse, GlobalSearchResult, PaginatedResponse } from '@chatbot-ai/shared';
 import type { ProviderKey } from '@chatbot-ai/shared';
 
 import { apiRequest } from './api-client';
@@ -16,7 +16,7 @@ export const fetchSessions = (cursor?: string | null, limit = 20) =>
     params: { cursor: cursor ?? undefined, limit },
   });
 
-export const createSession = (input: { title?: string; providerPreference: ProviderKey }) =>
+export const createSession = (input: { title?: string; providerPreference: ProviderKey; aiRuntimeMode?: AiRuntimeMode }) =>
   apiRequest<ChatSessionSummary>('/api/chat/sessions', {
     method: 'POST',
     body: JSON.stringify(input),
@@ -27,6 +27,7 @@ export const updateSession = (
   input: {
     title?: string;
     providerPreference?: ProviderKey;
+    aiRuntimeMode?: AiRuntimeMode;
     isPinned?: boolean;
     isArchived?: boolean;
   },

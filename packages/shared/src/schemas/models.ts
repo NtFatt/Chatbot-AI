@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 export const modelVersionProviderSchema = z.enum([
+  'internal_l3_tutor',
   'gemini',
   'openai',
   'fine_tuned_openai',

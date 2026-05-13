@@ -4,9 +4,10 @@ import { fileURLToPath } from 'node:url';
 
 import {
   DEFAULT_PROVIDER,
+  EXTERNAL_PROVIDER_KEYS,
   FALLBACK_PROVIDER,
   PROVIDER_DEFAULT_MODELS,
-  PROVIDER_KEYS,
+  type ExternalProviderKey,
   type ProviderKey,
 } from '@chatbot-ai/shared';
 import { parse } from 'dotenv';
@@ -40,7 +41,7 @@ const booleanish = z
   .optional()
   .transform((value) => value === 'true');
 
-const providerKeySchema = z.enum(PROVIDER_KEYS);
+const externalProviderKeySchema = z.enum(EXTERNAL_PROVIDER_KEYS);
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -62,8 +63,12 @@ const envSchema = z.object({
   OPENAI_MODEL: z.string().default('gpt-5.4-mini'),
   OPENAI_ENABLED: booleanish.default('true'),
   OPENAI_TIMEOUT_MS: z.coerce.number().int().min(5000).default(25000),
-  AI_PRIMARY_PROVIDER: providerKeySchema.optional(),
-  AI_FALLBACK_PROVIDER: providerKeySchema.optional(),
+  LOCAL_LORA_ENABLED: booleanish.default('false'),
+  LOCAL_LORA_BASE_URL: z.string().default('http://localhost:8008'),
+  LOCAL_LORA_MODEL: z.string().default('local-lora-tutor-v1'),
+  LOCAL_LORA_TIMEOUT_MS: z.coerce.number().int().default(30000),
+  AI_PRIMARY_PROVIDER: externalProviderKeySchema.optional(),
+  AI_FALLBACK_PROVIDER: externalProviderKeySchema.optional(),
   AI_MAX_CONTEXT_MESSAGES: z.coerce.number().int().min(4).max(30).default(10),
   AI_MAX_PROMPT_CHARS: z.coerce.number().int().min(1000).default(12000),
   AI_REQUEST_RETRY_COUNT: z.coerce.number().int().min(0).max(3).default(1),
@@ -71,6 +76,8 @@ const envSchema = z.object({
   AI_PROVIDER_COOLDOWN_MS: z.coerce.number().int().min(30_000).max(600_000).default(90_000),
   AI_LOCAL_FALLBACK_ENABLED: booleanish.default('true'),
   AI_STARTUP_STRICT: booleanish.default('false'),
+  L3_ALLOW_EXTERNAL_FALLBACK: booleanish.default('false'),
+  L3_INTERNAL_MODEL_NAME: z.string().trim().min(1).default(PROVIDER_DEFAULT_MODELS.internal_l3_tutor),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 });
 
@@ -108,9 +115,9 @@ export const env = {
   AI_FALLBACK_PROVIDER:
     (parsed.data.AI_FALLBACK_PROVIDER ?? FALLBACK_PROVIDER) ===
     (parsed.data.AI_PRIMARY_PROVIDER ?? DEFAULT_PROVIDER)
-      ? ([...PROVIDER_KEYS].find(
+      ? ([...EXTERNAL_PROVIDER_KEYS].find(
           (provider) => provider !== (parsed.data.AI_PRIMARY_PROVIDER ?? DEFAULT_PROVIDER),
-        ) as ProviderKey)
+        ) as ExternalProviderKey)
       : (parsed.data.AI_FALLBACK_PROVIDER ?? FALLBACK_PROVIDER),
   clientOrigins: parsed.data.CLIENT_ORIGIN.split(',').map((origin) => origin.trim()),
 };
@@ -138,6 +145,11 @@ export const getAIStartupIssues = (): AIStartupIssue[] => {
       provider: 'OPENAI' as const,
       enabled: env.OPENAI_ENABLED,
       configured: Boolean(env.OPENAI_API_KEY),
+    },
+    {
+      provider: 'local_lora' as const,
+      enabled: env.LOCAL_LORA_ENABLED,
+      configured: true, // Local provider doesn't strictly need API keys
     },
   ];
   const enabledProviders = providerEnv.filter((provider) => provider.enabled);

@@ -26,6 +26,16 @@ export class ModelRegistryRepository {
     });
   }
 
+  findFirstByProviderAndBaseModel(provider: ModelVersionProvider, baseModel: string) {
+    return this.db.modelVersion.findFirst({
+      where: {
+        provider,
+        baseModel,
+      },
+      orderBy: [{ updatedAt: 'desc' }],
+    });
+  }
+
   findActiveByProviders(providers: ModelVersionProvider[]) {
     return this.db.modelVersion.findFirst({
       where: {

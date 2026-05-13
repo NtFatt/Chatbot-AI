@@ -16,6 +16,7 @@ import {
   type ArtifactSearchResult,
   type ArtifactSharePayload,
   type ArtifactShareRevokePayload,
+  type ExternalProviderKey,
   type PublicStudyArtifact,
   type ReviewHistory,
   type StudyArtifact,
@@ -80,7 +81,7 @@ type ResolvedSourceContent = {
 
 type ResolvedArtifactProvider = {
   providersState: Awaited<ReturnType<ProvidersService['listProviders']>>;
-  sessionProvider: 'GEMINI' | 'OPENAI';
+  sessionProvider: ExternalProviderKey;
 };
 
 type ArtifactRecordWithOptionalSession = {
@@ -352,7 +353,10 @@ export class ArtifactsService {
 
     return {
       providersState,
-      sessionProvider: sessionProvider ?? providersState.defaultProvider,
+      sessionProvider:
+        sessionProvider === 'GEMINI' || sessionProvider === 'OPENAI'
+          ? sessionProvider
+          : providersState.defaultProvider,
     };
   }
 

@@ -23,4 +23,11 @@ export const PROVIDER_CAPABILITIES: Record<ProviderKey, ProviderCapabilityDescri
     structuredOutput: false,
     reasoningLevel: 'deep',
   },
+  internal_l3_tutor: {
+    streaming: false,
+    toolCalling: false,
+    fileSearch: true,
+    structuredOutput: true,
+    reasoningLevel: 'balanced',
+  },
 };

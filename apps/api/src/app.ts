@@ -39,6 +39,9 @@ import { GeminiAdapter } from './integrations/ai/adapters/gemini.adapter';
 import { OpenAIAdapter } from './integrations/ai/adapters/openai.adapter';
 import { AIOrchestratorService } from './integrations/ai/ai-orchestrator.service';
 import { ModelGatewayService } from './integrations/ai/model-gateway.service';
+import { AiRuntimeRouterService } from './integrations/ai/ai-runtime-router.service';
+import { InternalL3TutorModelService } from './integrations/ai/internal-l3-tutor-model.service';
+import { LocalLoraProvider } from './integrations/ai/local-lora.provider';
 import { ProviderHealthService } from './integrations/ai/provider-health.service';
 import { StructuredOutputService } from './integrations/ai/structured-output.service';
 import { RetrievalService } from './integrations/retrieval/retrieval.service';
@@ -65,6 +68,8 @@ export const createApp = () => {
   const providerClients = {
     GEMINI: env.GEMINI_API_KEY ? new GeminiAdapter(env.GEMINI_API_KEY) : null,
     OPENAI: env.OPENAI_API_KEY ? new OpenAIAdapter(env.OPENAI_API_KEY) : null,
+    internal_l3_tutor: null,
+    local_lora: env.LOCAL_LORA_ENABLED ? new LocalLoraProvider(usageService) : null,
   };
   const aiOrchestrator = new AIOrchestratorService(
     providersService,
@@ -85,10 +90,17 @@ export const createApp = () => {
     usageService,
   );
   const sessionIntelligenceService = new SessionIntelligenceService(structuredOutputService);
+  const internalL3TutorModelService = new InternalL3TutorModelService(usageService);
+  const aiRuntimeRouter = new AiRuntimeRouterService(
+    aiOrchestrator,
+    modelGatewayService,
+    modelRegistryService,
+    internalL3TutorModelService,
+  );
   const chatService = new ChatService(
     chatRepository,
     authService,
-    aiOrchestrator,
+    aiRuntimeRouter,
     retrievalService,
     chatGuardService,
     sessionIntelligenceService,
@@ -163,6 +175,11 @@ export const createApp = () => {
             : env.AI_LOCAL_FALLBACK_ENABLED
               ? 'fallback-only'
               : 'unavailable',
+        availableRuntimeModes: ['external_api', 'learning_engine_l3'],
+        defaultRuntimeMode: 'external_api',
+        l3InternalModel: 'enabled',
+        l3InternalModelName: env.L3_INTERNAL_MODEL_NAME,
+        l3ExternalFallbackAllowed: env.L3_ALLOW_EXTERNAL_FALLBACK,
         startupStrict: env.AI_STARTUP_STRICT,
         localFallbackEnabled: env.AI_LOCAL_FALLBACK_ENABLED,
         issues,

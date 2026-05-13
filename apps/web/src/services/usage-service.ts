@@ -1,3 +1,5 @@
+import type { ProviderKey } from '@chatbot-ai/shared';
+
 import { apiRequest } from './api-client';
 
 export interface ChatUsageResponse {
@@ -9,7 +11,7 @@ export interface ChatUsageResponse {
   };
   items: Array<{
     id: string;
-    provider: 'GEMINI' | 'OPENAI';
+    provider: ProviderKey;
     model: string;
     success: boolean;
     fallbackUsed: boolean;

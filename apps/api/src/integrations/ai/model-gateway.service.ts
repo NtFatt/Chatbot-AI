@@ -25,7 +25,7 @@ export interface ModelGatewayResponse {
 export class ModelGatewayService {
   constructor(
     private readonly providersService: ProvidersService,
-    private readonly providers: Record<ProviderKey, AIProvider | null>,
+    private readonly providers: Partial<Record<ProviderKey, AIProvider | null>>,
     private readonly providerHealthService: ProviderHealthService,
     private readonly usageService: UsageService,
   ) {}

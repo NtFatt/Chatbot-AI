@@ -59,11 +59,15 @@ const providers = [
 const configuredProviders = providers.filter((provider) => provider.enabled && provider.configured);
 const localFallbackEnabled = booleanish(envFile.AI_LOCAL_FALLBACK_ENABLED, true);
 const startupStrict = booleanish(envFile.AI_STARTUP_STRICT, false);
+const l3ExternalFallbackAllowed = booleanish(envFile.L3_ALLOW_EXTERNAL_FALLBACK, false);
+const l3InternalModelName = envFile.L3_INTERNAL_MODEL_NAME || 'internal-l3-tutor-v1';
 
 console.log('\nAI Doctor\n');
 console.log(`- Env source: ${fs.existsSync(envPath) ? 'apps/api/.env' : 'apps/api/.env.example'}`);
 console.log(`- Local fallback enabled: ${localFallbackEnabled ? 'yes' : 'no'}`);
 console.log(`- Startup strict mode: ${startupStrict ? 'yes' : 'no'}`);
+console.log(`- L3 internal model: ${l3InternalModelName}`);
+console.log(`- L3 external fallback allowed: ${l3ExternalFallbackAllowed ? 'yes' : 'no'}`);
 console.log('');
 
 providers.forEach((provider) => {
@@ -78,16 +82,56 @@ providers.forEach((provider) => {
   );
 });
 
+const readHealth = async () => {
+  const endpoints = ['http://localhost:4000/health', 'http://127.0.0.1:4000/health'];
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint);
+      if (response.ok) {
+        return {
+          endpoint,
+          payload: await response.json(),
+        };
+      }
+
+      return {
+        endpoint,
+        status: response.status,
+      };
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+};
+
 try {
-  const response = await fetch('http://localhost:4000/health');
-  if (response.ok) {
-    const payload = await response.json();
+  const health = await readHealth();
+  if (health?.payload) {
+    const payload = health.payload;
     const healthAi = payload?.data?.ai;
     console.log('');
-    console.log(`- API /health: reachable`);
+    console.log(`- API /health: reachable via ${health.endpoint}`);
     if (healthAi) {
       console.log(`- Runtime AI mode: ${healthAi.mode}`);
       console.log(`- Runtime local fallback: ${healthAi.localFallbackEnabled ? 'yes' : 'no'}`);
+      if (Array.isArray(healthAi.availableRuntimeModes)) {
+        console.log(`- Runtime modes: ${healthAi.availableRuntimeModes.join(', ')}`);
+      }
+      if (healthAi.defaultRuntimeMode) {
+        console.log(`- Default runtime mode: ${healthAi.defaultRuntimeMode}`);
+      }
+      if (healthAi.l3InternalModel) {
+        console.log(`- L3 internal model health: ${healthAi.l3InternalModel}`);
+      }
+      if (healthAi.l3InternalModelName) {
+        console.log(`- L3 internal model name: ${healthAi.l3InternalModelName}`);
+      }
+      if (typeof healthAi.l3ExternalFallbackAllowed === 'boolean') {
+        console.log(`- L3 external fallback live: ${healthAi.l3ExternalFallbackAllowed ? 'yes' : 'no'}`);
+      }
       if (Array.isArray(healthAi.issues) && healthAi.issues.length > 0) {
         console.log('- Runtime issues:');
         healthAi.issues.forEach((issue) => {
@@ -95,9 +139,12 @@ try {
         });
       }
     }
+  } else if (health?.status) {
+    console.log('');
+    console.log(`- API /health: unreachable (HTTP ${health.status})`);
   } else {
     console.log('');
-    console.log(`- API /health: unreachable (HTTP ${response.status})`);
+    console.log('- API /health: not reachable right now');
   }
 } catch {
   console.log('');
