@@ -1,72 +1,68 @@
-# Chatbot AI — Vietnamese Study Assistant
+# Chatbot AI — Vietnamese AI Study Assistant
 
-A production-minded fullstack AI study workspace for Vietnamese students.
+A production-minded fullstack AI learning workspace for Vietnamese students, featuring realtime chat, study artifacts, contextual learning support, AI provider diagnostics, an internal AI Level 3 learning engine, and a Low Level 4-ready Local LoRA runtime.
 
-The app provides realtime chat, study artifacts, contextual learning materials, AI provider diagnostics, an internal Level 3 learning engine, and a Low Level 4-ready Local LoRA runtime.
-
----
-
-## 1. Overview
-
-**Chatbot AI** is an AI-powered study assistant designed for students who need clear explanations, reusable study materials, and a reliable learning workspace.
-
-Core goals:
-
-- Ask academic questions in a realtime chat interface.
-- Save generated answers as summaries, flashcards, quizzes, and notes.
-- Review learning artifacts later.
-- Search across old sessions and study artifacts.
-- Switch between external AI providers and the app-owned learning engine.
-- Prepare a real local fine-tuned model path through Local LoRA.
-
-This project is built as a professional CV/demo project with production-oriented architecture, tests, migrations, diagnostics, and clear runtime documentation.
+This is not a basic API-wrapper chatbot. The project includes a complete AI learning platform layer: dataset management, evaluation harness, model registry, fine-tune-ready adapters, internal tutor runtime, and local LoRA integration path.
 
 ---
 
-## 2. Current Status
+## Highlights
+
+- Fullstack AI study assistant built with **React, TypeScript, Express, PostgreSQL, Prisma, Socket.IO, and TanStack Query**.
+- Realtime chat with optimistic UI, reconnect handling, retry flow, HTTP fallback, and provider metadata.
+- Study artifact system: summaries, flashcards, quizzes, notes, artifact editing, refinement, review mode, favorites, sharing, and cross-session search.
+- AI Level 3 architecture with dataset manager, evaluation harness, model registry, fine-tune-ready adapter layer, and internal tutor runtime.
+- Low Level 4-ready local model path with dataset export, LoRA/SFT training scripts, mock/real local inference server, `LocalLoraProvider`, and model registry activation flow.
+- Production-minded validation: Prisma migrations, lint, typecheck, unit/component tests, Playwright E2E, build checks, and AI runtime diagnostics.
+
+---
+
+## Project Status
 
 | Area | Status |
 | --- | --- |
 | Fullstack app | Complete |
 | Realtime chat + HTTP fallback | Complete |
 | Study artifacts | Complete |
-| Artifact refinement / quiz review | Complete |
-| Global search / artifact search | Complete |
+| Artifact refinement / review mode | Complete |
+| Global message search | Complete |
+| Cross-session artifact search | Complete |
+| AI provider diagnostics | Complete |
 | AI Level 3 learning engine | Complete |
 | Internal L3 tutor runtime | Complete |
 | Dataset manager | Complete |
 | Evaluation harness | Complete |
 | Model registry | Complete |
 | Fine-tune-ready adapter layer | Complete |
-| Low Level 4 Local LoRA integration | Scaffolded / integration-ready |
+| Low Level 4 Local LoRA integration | Integration-ready |
 | Real trained LoRA adapter | Not committed / must be trained locally |
-| Production release | Not release-ready |
+| Production deployment | Not finalized |
 
 ---
 
-## 3. Main Features
+## Core Features
 
 ### Study Workspace
 
 - Guest login
-- Session CRUD
-- Session pin/archive
+- Session create / rename / delete
+- Pin and archive sessions
 - Batch session actions
-- Global message search
 - Continue-learning entry points
+- Global message search
 - Responsive dashboard
 - Dark mode
-- Reconnect / fallback messaging
+- Realtime status and HTTP fallback indicator
 
-### Chat System
+### Realtime Chat
 
-- Realtime chat through Socket.IO
-- HTTP fallback when realtime transport is unavailable
-- Optimistic message rendering
+- Socket.IO realtime messaging
+- Optimistic user messages
+- Streaming assistant responses
 - Message retry
-- Provider metadata
-- Latency / confidence / fallback indicators
-- Markdown rendering with sanitized output
+- Reconnect recovery
+- HTTP fallback when socket transport is unavailable
+- Provider, model, latency, confidence, and fallback metadata
 
 ### Study Artifacts
 
@@ -79,57 +75,75 @@ Supported artifact types:
 
 Artifact capabilities:
 
-- Generate from AI responses
+- Generate from assistant responses
 - Edit artifact content
-- Refine artifact content
-- Quiz review mode
-- Review history
+- Refine generated artifacts
+- Review quizzes
+- Track review history
 - Favorite artifacts
 - Search artifacts across sessions
-- Export/share artifacts
+- Share and export artifacts
 
 ### Learning Materials
 
 - Contextual material recommendation
-- Subject/topic-based ranking
+- Subject/topic-aware ranking
+- Retrieval snapshot per assistant response
 - Recent source visibility
-- Retrieval snapshot per message
-- Material source cards
+- Source cards in the study workspace
 
 ---
 
-## 4. AI Runtime Modes
+## AI Architecture
 
-The app supports two runtime modes per chat session.
+The project supports multiple AI runtime layers.
 
-### Mode 1 — External AI API
+```txt
+User Message
+→ ChatService
+→ AiRuntimeRouterService
+→ Runtime Mode
+   ├─ External AI API
+   │  └─ AIOrchestratorService → Gemini/OpenAI
+   │
+   └─ AI học tập Level 3
+      ├─ Active ModelVersion through ModelGateway
+      ├─ InternalL3TutorModelService
+      └─ Local study fallback
 
-Uses configured large AI providers through the existing provider orchestration layer.
+The frontend never calls Gemini/OpenAI directly. All AI calls go through the backend routing layer.
+
+AI Runtime Modes
+
+Each chat session can use its own runtime mode.
+
+1. External AI API
+
+Uses configured large AI providers through the backend orchestrator.
 
 Typical providers:
 
-- Gemini
-- OpenAI
+Gemini
+OpenAI
 
 Runtime path:
 
-```txt
 ChatService
 → AiRuntimeRouterService
 → AIOrchestratorService
 → Gemini/OpenAI
 
-Use this mode when you want the strongest external provider response.
+This mode is used when the user wants responses from external AI providers.
 
-Mode 2 — AI học tập Level 3
+2. AI học tập Level 3
 
 Uses the app-owned Level 3 learning engine.
 
-Default provider:
+Default internal provider:
 
 internal_l3_tutor
 
-Default model name:
+Default internal model name:
 
 internal-l3-tutor-v1
 
@@ -144,24 +158,24 @@ ChatService
 Important:
 
 Level 3 does not call Gemini/OpenAI by default.
-External fallback is opt-in only through environment config.
+External fallback is opt-in only.
 Level 3 is not a trained-from-scratch LLM.
-Level 3 is an app-owned deterministic tutor runtime with model-registry wiring, tutor policy, retrieval context, and structured study behavior.
-5. Low Level 4 Local LoRA Runtime
+Level 3 is an app-owned tutor runtime built around tutor policy, retrieval context, structured study behavior, and model-registry wiring.
+Low Level 4 Local LoRA Runtime
 
 The project includes a Low Level 4-ready local fine-tuning path.
 
-This includes:
+Implemented pieces:
 
 ml/ workspace
-dataset export script
+Hugging Face chat JSONL dataset export
 LoRA/SFT training script
-dataset validation script
-mock/real FastAPI local inference server
-backend LocalLoraProvider
-model registry support
-routing through ModelGatewayService
-fallback to internal Level 3 tutor
+Dataset validation script
+Mock/real FastAPI local inference server
+Backend LocalLoraProvider
+Model registry integration
+Model gateway routing
+Fallback from Local LoRA to Internal L3 Tutor
 
 Target runtime path:
 
@@ -172,12 +186,12 @@ Approved TrainingExamples
 → local inference server
 → LocalLoraProvider
 → ModelGateway
-→ ModelRegistry active model
+→ active ModelVersion
 → ChatService
 
-This is Low Level 4-ready. Do not claim a real trained model unless a real adapter has been trained, served, registered, and validated.
+This is a Low Level 4-ready integration. A real trained model should only be claimed after a real LoRA adapter is trained, served, registered, activated, and validated.
 
-6. Tech Stack
+Tech Stack
 Frontend
 React
 Vite
@@ -199,8 +213,8 @@ Prisma
 PostgreSQL
 Zod
 JWT auth
-Provider adapters for Gemini/OpenAI
-Internal L3 runtime
+Gemini/OpenAI provider adapters
+Internal Level 3 tutor runtime
 Local LoRA provider integration
 ML / Local Model Layer
 Python
@@ -210,7 +224,7 @@ TRL
 FastAPI
 Uvicorn
 LoRA/SFT training scaffold
-7. Repository Structure
+Repository Structure
 apps/
   api/
     src/
@@ -277,22 +291,22 @@ docs/
 scripts/
 tests/
 infra/
-8. Environment Requirements
+Environment Requirements
 
 Required:
 
 Node.js 22+
 pnpm 10+
 PostgreSQL
-Docker Desktop, optional but recommended
 Python 3.10+ for Local LoRA scripts
 
 Optional:
 
+Docker Desktop
 Gemini API key
 OpenAI API key
-GPU for real LoRA training
-9. Setup
+GPU or cloud notebook for real LoRA training
+Local Setup
 
 Install dependencies:
 
@@ -318,13 +332,13 @@ pnpm db:seed
 
 Do not use prisma db push for normal development. Use migrations.
 
-10. Real AI Setup
+Real AI Setup
 
 Edit:
 
 apps/api/.env
 
-Add at least one real provider key:
+Add at least one provider key:
 
 GEMINI_API_KEY=your_real_gemini_key
 OPENAI_API_KEY=your_real_openai_key
@@ -338,7 +352,7 @@ AI_FALLBACK_PROVIDER=OPENAI
 AI_LOCAL_FALLBACK_ENABLED=true
 AI_STARTUP_STRICT=false
 
-Check readiness:
+Check provider readiness:
 
 pnpm ai:doctor
 
@@ -346,7 +360,7 @@ Expected:
 
 Runtime AI mode: real
 At least one provider configured
-11. AI Level 3 Config
+AI Level 3 Config
 
 Default config:
 
@@ -356,9 +370,9 @@ L3_INTERNAL_MODEL_NAME=internal-l3-tutor-v1
 Meaning:
 
 learning_engine_l3 uses the internal tutor by default.
-Gemini/OpenAI are not called in L3 mode unless external fallback is explicitly enabled.
+Gemini/OpenAI are not called in Level 3 mode unless external fallback is explicitly enabled.
 External API mode still uses Gemini/OpenAI normally.
-12. Low Level 4 Local LoRA Config
+Low Level 4 Local LoRA Config
 
 Enable Local LoRA provider:
 
@@ -367,7 +381,7 @@ LOCAL_LORA_BASE_URL=http://localhost:8008
 LOCAL_LORA_MODEL=local-lora-tutor-v1
 LOCAL_LORA_TIMEOUT_MS=30000
 
-Start mock/real local inference server:
+Start the mock/real local inference server:
 
 python ml/scripts/serve_local_lora.py --mock
 
@@ -378,7 +392,7 @@ python ml/scripts/serve_local_lora.py
 Check server health:
 
 Invoke-RestMethod http://localhost:8008/health
-13. Run Development Stack
+Run Development Stack
 
 Run API:
 
@@ -388,7 +402,7 @@ Run Web:
 
 pnpm dev:web
 
-Or run full stack if supported:
+Or run the full stack if supported:
 
 pnpm dev
 
@@ -400,7 +414,7 @@ Web: http://localhost:5173
 Health check:
 
 Invoke-RestMethod http://localhost:4000/health
-14. Validation Commands
+Validation
 
 Run full validation:
 
@@ -420,7 +434,7 @@ Python script checks:
 python -m py_compile ml/scripts/train_lora_sft.py
 python -m py_compile ml/scripts/serve_local_lora.py
 python -m py_compile ml/scripts/validate_dataset.py
-15. Manual Smoke Test
+Manual Smoke Test
 External API Mode
 Start API and Web.
 Login as guest.
@@ -432,18 +446,18 @@ AI Level 3 Mode
 Open Workspace Settings.
 Set mode to AI học tập Level 3.
 Ask a Vietnamese study question.
-Confirm badge shows AI học tập Level 3 or L3 Tutor Model.
+Confirm the badge shows AI học tập Level 3 or L3 Tutor Model.
 Confirm it does not show Gemini/OpenAI unless external fallback is explicitly enabled.
 Low Level 4 Local LoRA
-Start Local LoRA server.
+Start the Local LoRA server.
 Enable LOCAL_LORA_ENABLED=true.
 Register and activate a local_lora model version.
 Ask a question in Level 3 mode.
-Confirm badge shows Local LoRA Tutor or Low L4 Tutor.
-Stop local server.
+Confirm the badge shows Local LoRA Tutor or Low L4 Tutor.
+Stop the local server.
 Ask again.
 Confirm fallback to Internal L3 Tutor.
-16. Useful API Endpoints
+Useful API Endpoints
 POST   /api/auth/login
 POST   /api/auth/refresh
 POST   /api/auth/logout
@@ -472,50 +486,40 @@ GET    /api/providers/metrics
 GET    /api/providers/incidents
 
 GET    /health
-17. Testing Philosophy
-
-The project is designed to keep AI behavior testable without relying on live provider availability.
-
-Automated tests should:
-
-Mock external providers.
-Avoid real Gemini/OpenAI calls.
-Avoid loading real local LLMs.
-Keep Local LoRA tests deterministic.
-Validate routing, metadata, fallback, and UI behavior.
-18. Security Notes
+Security Notes
 Frontend never calls Gemini/OpenAI directly.
 API keys stay in backend environment files only.
 JWT access tokens are short-lived.
 Refresh tokens are hashed in the database.
-Request IDs are logged.
 Authorization headers are redacted in logs.
-Rate limiting is applied per sensitive route.
+Request IDs are included in logs and error responses.
 User input is validated with Zod.
 Markdown output is sanitized on the frontend.
-Model weights, adapters, and datasets should not be committed.
-19. Known Limitations
+Rate limiting is applied to sensitive routes.
+Model weights, adapters, datasets, and API keys should not be committed.
+Known Limitations
 Low Level 4 is integration-ready unless a real LoRA adapter is trained and served.
 Realtime transport may fall back to HTTP in the normal dev stack.
 Direct node apps/api/dist/server.js from repo root is not the standard runtime path.
 Production deployment is not finalized.
 Local LoRA training requires suitable hardware or a cloud notebook/runtime.
-20. Project Value
+CV Value
 
 This project demonstrates:
 
-Fullstack TypeScript architecture
-Realtime chat engineering
+Fullstack TypeScript engineering
+Realtime chat architecture
 AI provider orchestration
-Study artifact generation and review
+Secure backend-only AI routing
 RAG-style retrieval context
+Study artifact generation and review
 Dataset manager
 Evaluation harness
 Model registry
-Fine-tune-ready architecture
+Fine-tune-ready AI platform design
 Internal AI runtime mode
 Low Level 4 Local LoRA integration
 Production-minded testing and validation
-21. License
+License
 
 Personal educational / portfolio project.
