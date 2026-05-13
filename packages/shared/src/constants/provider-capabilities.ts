@@ -30,4 +30,11 @@ export const PROVIDER_CAPABILITIES: Record<ProviderKey, ProviderCapabilityDescri
     structuredOutput: true,
     reasoningLevel: 'balanced',
   },
+  local_lora: {
+    streaming: false,
+    toolCalling: false,
+    fileSearch: false,
+    structuredOutput: false,
+    reasoningLevel: 'fast',
+  },
 };

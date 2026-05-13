@@ -67,6 +67,7 @@ const providerLabelMap: Record<ProviderKey, string> = {
   GEMINI: 'Gemini',
   OPENAI: 'OpenAI',
   internal_l3_tutor: 'Internal L3 Tutor',
+  local_lora: 'Local LoRA Tutor',
 };
 
 const joinLocalized = (language: AppLanguage, vi: string, en: string) => {

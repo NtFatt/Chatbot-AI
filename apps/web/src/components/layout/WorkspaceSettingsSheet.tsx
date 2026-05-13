@@ -19,6 +19,7 @@ const providerDescriptions: Record<ProviderKey, string> = {
   OPENAI: 'Hợp hơn khi bạn muốn lời giải kỹ, mạch lạc và có chiều sâu phân tích.',
   internal_l3_tutor:
     'Model nội bộ Level 3 của app, ưu tiên tutor policy, tài liệu truy xuất và phản hồi học tập có kiểm soát.',
+  local_lora: 'Model LoRA cục bộ Level 4 chạy fallback khi offline.',
 };
 
 const connectionLabels = {

@@ -17,6 +17,7 @@ enum ProviderKey {
   GEMINI
   OPENAI
   internal_l3_tutor
+  local_lora
 }
 
 enum MaterialLevel {
@@ -123,12 +124,12 @@ enum TrainingJobStatus {
 }
 
 model User {
-  id                String        @id @default(uuid())
+  id                String            @id @default(uuid())
   displayName       String
   preferredLanguage PreferredLanguage @default(bilingual)
   lastSeenAt        DateTime?
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
   authSessions      AuthSession[]
   chatSessions      ChatSession[]
   aiUsageLogs       AiUsageLog[]
@@ -167,20 +168,20 @@ model AiProviderConfig {
 }
 
 model ChatSession {
-  id                 String                @id @default(uuid())
+  id                 String                  @id @default(uuid())
   userId             String
   title              String
-  providerPreference ProviderKey           @default(GEMINI)
-  aiRuntimeMode      String                @default("external_api")
+  providerPreference ProviderKey             @default(GEMINI)
+  aiRuntimeMode      String                  @default("external_api")
   contextSummary     String?
-  isPinned           Boolean              @default(false)
+  isPinned           Boolean                 @default(false)
   pinnedAt           DateTime?
-  isArchived         Boolean              @default(false)
+  isArchived         Boolean                 @default(false)
   archivedAt         DateTime?
   lastReadAt         DateTime?
-  createdAt          DateTime              @default(now())
-  updatedAt          DateTime              @updatedAt
-  user               User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+  user               User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages           Message[]
   recommendations    RecommendationHistory[]
   aiUsageLogs        AiUsageLog[]
@@ -193,33 +194,33 @@ model ChatSession {
 }
 
 model Message {
-  id              String        @id @default(uuid())
-  sessionId       String
-  clientMessageId String        @unique
+  id                    String          @id @default(uuid())
+  sessionId             String
+  clientMessageId       String          @unique
   parentClientMessageId String?
-  senderType      SenderType
-  content         String
-  status          MessageStatus @default(sent)
-  provider        ProviderKey?
-  model           String?
-  providerRequestId String?
-  responseFinishReason AIFinishReason?
-  latencyMs       Int?
-  inputTokens     Int?
-  outputTokens    Int?
-  totalTokens     Int?
-  confidenceScore Float?
-  subjectLabel    String?
-  topicLabel      String?
-  levelLabel      MaterialLevel?
-  retrievalSnapshot Json?
-  fallbackUsed    Boolean       @default(false)
-  errorCode       String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  session         ChatSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  aiUsageLogs     AiUsageLog[]
-  studyArtifacts  StudyArtifact[]
+  senderType            SenderType
+  content               String
+  status                MessageStatus   @default(sent)
+  provider              ProviderKey?
+  model                 String?
+  providerRequestId     String?
+  responseFinishReason  AIFinishReason?
+  latencyMs             Int?
+  inputTokens           Int?
+  outputTokens          Int?
+  totalTokens           Int?
+  confidenceScore       Float?
+  subjectLabel          String?
+  topicLabel            String?
+  levelLabel            MaterialLevel?
+  retrievalSnapshot     Json?
+  fallbackUsed          Boolean         @default(false)
+  errorCode             String?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  session               ChatSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  aiUsageLogs           AiUsageLog[]
+  studyArtifacts        StudyArtifact[]
 
   @@index([sessionId, createdAt])
   @@index([sessionId, updatedAt])
@@ -337,22 +338,22 @@ model ProviderIncident {
 }
 
 model StudyArtifact {
-  id          String       @id @default(uuid())
-  userId      String
-  sessionId   String?
-  messageId   String?
-  type        ArtifactType
-  title       String
-  content     Json
-  isFavorited Boolean      @default(false)
+  id           String       @id @default(uuid())
+  userId       String
+  sessionId    String?
+  messageId    String?
+  type         ArtifactType
+  title        String
+  content      Json
+  isFavorited  Boolean      @default(false)
   qualityScore Float?
-  shareToken  String?      @unique
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  shareToken   String?      @unique
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
 
-  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  session     ChatSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  message     Message?     @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session       ChatSession?    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  message       Message?        @relation(fields: [messageId], references: [id], onDelete: SetNull)
   reviewHistory ReviewHistory[]
 
   @@index([userId, createdAt(sort: Desc)])
@@ -371,8 +372,8 @@ model ReviewHistory {
   selfAssessment ReviewSelfAssessment
   reviewedAt     DateTime             @default(now())
 
-  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  artifact       StudyArtifact        @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  artifact StudyArtifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
 
   @@index([userId, reviewedAt])
   @@index([artifactId])
@@ -388,7 +389,7 @@ model TrainingDataset {
   createdAt   DateTime              @default(now())
   updatedAt   DateTime              @updatedAt
 
-  examples    TrainingExample[]
+  examples     TrainingExample[]
   trainingJobs TrainingJob[]
 
   @@index([status, updatedAt(sort: Desc)])
@@ -396,22 +397,22 @@ model TrainingDataset {
 }
 
 model TrainingExample {
-  id           String                    @id @default(uuid())
-  datasetId    String
-  sourceType   TrainingExampleSourceType
-  sourceId     String?
-  subject      String?
-  topic        String?
-  learningMode String?
-  userLevel    String?
+  id            String                    @id @default(uuid())
+  datasetId     String
+  sourceType    TrainingExampleSourceType
+  sourceId      String?
+  subject       String?
+  topic         String?
+  learningMode  String?
+  userLevel     String?
   inputMessages Json
   idealResponse String
-  qualityScore Int                       @default(3)
-  status       TrainingExampleStatus     @default(draft)
-  createdAt    DateTime                  @default(now())
-  updatedAt    DateTime                  @updatedAt
+  qualityScore  Int                       @default(3)
+  status        TrainingExampleStatus     @default(draft)
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
 
-  dataset      TrainingDataset           @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  dataset TrainingDataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
 
   @@index([datasetId, status, updatedAt(sort: Desc)])
   @@index([sourceType, sourceId])
@@ -419,34 +420,34 @@ model TrainingExample {
 }
 
 model EvalCase {
-  id            String        @id @default(uuid())
+  id            String       @id @default(uuid())
   name          String
   description   String?
   category      EvalCategory
   inputMessages Json
   idealResponse String?
   scoringNotes  String?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
 
-  results       EvalRunResult[]
+  results EvalRunResult[]
 
   @@index([category, updatedAt(sort: Desc)])
   @@map("eval_cases")
 }
 
 model EvalRun {
-  id             String         @id @default(uuid())
+  id             String      @id @default(uuid())
   provider       ProviderKey
   model          String
   modelVersionId String?
   averageScore   Float?
   notes          String?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 
-  modelVersion   ModelVersion?  @relation(fields: [modelVersionId], references: [id], onDelete: SetNull)
-  results        EvalRunResult[]
+  modelVersion ModelVersion?   @relation(fields: [modelVersionId], references: [id], onDelete: SetNull)
+  results      EvalRunResult[]
 
   @@index([provider, createdAt(sort: Desc)])
   @@index([modelVersionId])
@@ -454,16 +455,16 @@ model EvalRun {
 }
 
 model EvalRunResult {
-  id         String    @id @default(uuid())
-  runId       String
-  evalCaseId  String
-  output      String
-  score       Float
-  notes       String?
-  createdAt   DateTime @default(now())
+  id         String   @id @default(uuid())
+  runId      String
+  evalCaseId String
+  output     String
+  score      Float
+  notes      String?
+  createdAt  DateTime @default(now())
 
-  run         EvalRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
-  evalCase    EvalCase @relation(fields: [evalCaseId], references: [id], onDelete: Cascade)
+  run      EvalRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  evalCase EvalCase @relation(fields: [evalCaseId], references: [id], onDelete: Cascade)
 
   @@index([runId])
   @@index([evalCaseId])
@@ -482,8 +483,8 @@ model ModelVersion {
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
 
-  evalRuns       EvalRun[]
-  trainingJobs   TrainingJob[]
+  evalRuns     EvalRun[]
+  trainingJobs TrainingJob[]
 
   @@index([provider, isActive])
   @@index([status, updatedAt(sort: Desc)])
@@ -491,20 +492,20 @@ model ModelVersion {
 }
 
 model TrainingJob {
-  id            String               @id @default(uuid())
+  id             String               @id @default(uuid())
   datasetId      String
   provider       ModelVersionProvider
   baseModel      String
-  status         TrainingJobStatus   @default(draft)
+  status         TrainingJobStatus    @default(draft)
   externalJobId  String?
   modelVersionId String?
   errorMessage   String?
   metadata       Json?
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
 
-  dataset        TrainingDataset     @relation(fields: [datasetId], references: [id], onDelete: Cascade)
-  modelVersion   ModelVersion?       @relation(fields: [modelVersionId], references: [id], onDelete: SetNull)
+  dataset      TrainingDataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  modelVersion ModelVersion?   @relation(fields: [modelVersionId], references: [id], onDelete: SetNull)
 
   @@index([datasetId, createdAt(sort: Desc)])
   @@index([provider, status, createdAt(sort: Desc)])
