@@ -1,6 +1,6 @@
 # Chatbot AI - Project Progress Checklist
 
-**Last updated:** 2026-05-13  
+**Last updated:** 2026-05-14  
 **Repository:** `D:\LEARNCODE\Project_CV\Chatbot AI`  
 **Release status:** NOT RELEASE READY
 
@@ -10,8 +10,8 @@
 | --- | --- |
 | Project | Chatbot AI - Vietnamese Study Assistant |
 | Overall status | AI-L4 local LoRA integration is complete, including ML workspace setup, mock/real inference server, backend AI provider `local_lora`, and dataset exporter. The `learning_engine_l3` path now correctly handles Local LoRA overrides. |
-| Current active task | `[~]` Validate the new Local LoRA inference flow and finalize test coverage for the `LocalLoraProvider`. |
-| Next recommended task | Stabilize the normal dev-stack realtime transport so manual smoke no longer shows `Realtime disconnected. Using fallback.` while the HTTP fallback path is working. |
+| Current active task | `[~]` Stabilize the normal dev-stack realtime transport so manual smoke no longer shows `Realtime disconnected. Using fallback.` while the HTTP fallback path is working. |
+| Next recommended task | Finalize test coverage for `LocalLoraProvider` and the ML scripts. |
 | Risks / blockers | `[~]` Need to ensure CI pipeline has python requirements for the new ML scripts if we decide to run them. `[~]` Realtime disconnects still appear in normal dev stack. |
 
 ## 2. Progress Legend
@@ -79,4 +79,4 @@
 | `docs/REAL_AI_SETUP.md` | `[x]` | Provider setup instructions for Gemini/OpenAI. |
 | `docs/AI_LEVEL_3_RUNTIME_NOTES.md` | `[x]` | Updated 2026-05-13 for the internal `internal_l3_tutor` runtime, opt-in external fallback, metadata contract, and health/diagnostics fields. |
 | `docs/RUNTIME_RUNBOOK.md` | `[x]` | Updated 2026-05-13 with supported boot commands, L3 env flags, manual smoke steps, and the current AI Lab/eval limitations. |
-| `docs/PROJECT_PROGRESS_CHECKLIST.md` | `[x]` | This file. Updated 2026-05-13. |
+| `docs/PROJECT_PROGRESS_CHECKLIST.md` | `[x]` | This file. Updated 2026-05-14. |
