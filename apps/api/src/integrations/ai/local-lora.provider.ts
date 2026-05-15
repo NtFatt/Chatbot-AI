@@ -36,10 +36,17 @@ export class LocalLoraProvider implements AIProvider {
     callbacks?: { onChunk?: (chunk: string) => void },
   ): Promise<AIProviderResponse> {
     const startedAt = Date.now();
+    const timeoutMs = request.timeoutMs ?? env.LOCAL_LORA_TIMEOUT_MS;
 
     if (!env.LOCAL_LORA_ENABLED) {
-      throw new Error('LOCAL_LORA_ENABLED is false');
+      const errorDescriptor = classifyProviderError(new Error('LOCAL_LORA_ENABLED is false'));
+      throw Object.assign(new Error(`[local_lora] ${errorDescriptor.message}`), {
+        provider: 'local_lora',
+        descriptor: errorDescriptor,
+      });
     }
+
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     try {
       const formattedMessages: LocalLoraMessage[] = [];
@@ -51,7 +58,7 @@ export class LocalLoraProvider implements AIProvider {
       );
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), env.LOCAL_LORA_TIMEOUT_MS);
+      timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
       const response = await fetch(`${env.LOCAL_LORA_BASE_URL}/v1/chat/completions`, {
         method: 'POST',
@@ -65,8 +72,6 @@ export class LocalLoraProvider implements AIProvider {
         }),
         signal: controller.signal,
       });
-
-      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => 'No response body');
@@ -97,11 +102,19 @@ export class LocalLoraProvider implements AIProvider {
         },
       };
     } catch (error: unknown) {
-      const errorDescriptor = classifyProviderError(error);
+      const normalizedError =
+        error instanceof Error && error.name === 'AbortError'
+          ? new Error(`LOCAL_LORA_TIMEOUT after ${timeoutMs}ms`)
+          : error;
+      const errorDescriptor = classifyProviderError(normalizedError);
       throw Object.assign(new Error(`[local_lora] ${errorDescriptor.message}`), {
         provider: 'local_lora',
         descriptor: errorDescriptor,
       });
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
     }
   }
 }

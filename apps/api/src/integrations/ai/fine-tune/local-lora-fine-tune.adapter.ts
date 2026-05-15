@@ -10,12 +10,12 @@ export class LocalLoraFineTuneAdapterStub implements FineTuneAdapter {
   readonly provider = 'local_lora' as const;
 
   async startJob(input: FineTuneAdapterStartInput): Promise<FineTuneAdapterResult> {
-    const outputDir = `./artifacts/fine-tune/${input.dataset.id}`;
+    const outputDir = `./ml/adapters/${input.dataset.id}`;
     const command = [
-      'python train_lora.py',
-      `--dataset ${outputDir}/dataset.hf-chat.json`,
-      `--base-model ${input.baseModel}`,
-      `--output-dir ${outputDir}/model`,
+      'python ml/scripts/train_lora_sft.py',
+      '--config ml/configs/l4-low-sft.yaml',
+      `--dataset ${outputDir}/train.jsonl`,
+      `--validation ${outputDir}/validation.jsonl`,
     ].join(' ');
 
     return {
@@ -27,8 +27,8 @@ export class LocalLoraFineTuneAdapterStub implements FineTuneAdapter {
         outputDir,
         command,
         instructions: [
-          'Export the HF chat payload to a local training workspace.',
-          'Run the generated command in your local fine-tuning environment.',
+          'Export the HF chat payload to a local training workspace as train/validation JSONL.',
+          'Run the generated command in your local fine-tuning environment after reviewing the base model and config.',
           'After training, update the resulting model version with the produced checkpoint name.',
         ],
         approvedExampleCount: input.approvedExamples.length,

@@ -1,11 +1,13 @@
 import { PrismaClient } from '@prisma/client';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import fs from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
-const prisma = new PrismaClient();
+export const DEFAULT_SYSTEM_MESSAGE =
+  'Bạn là trợ lý học tập AI. Bạn sẽ giúp học sinh với bài tập một cách chính xác và cẩn thận.';
+export const MIN_APPROVED_EXAMPLES = 20;
 
-function printHelp() {
+export function printHelp() {
   console.log(`
 Usage: node export-l4-dataset.mjs --dataset-id <id> [options]
 
@@ -18,108 +20,191 @@ Options:
   `);
 }
 
-async function main() {
-  const args = process.argv.slice(2);
+export function parseCliArgs(args) {
   let datasetId = '';
   let outPath = '';
   let validationOut = '';
   let validationRatio = 0.1;
   let allowSmall = false;
+  let help = false;
 
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--dataset-id') datasetId = args[++i];
-    else if (args[i] === '--out') outPath = args[++i];
-    else if (args[i] === '--validation-out') validationOut = args[++i];
-    else if (args[i] === '--validation-ratio') validationRatio = parseFloat(args[++i]);
-    else if (args[i] === '--allow-small') allowSmall = true;
-    else if (args[i] === '--help') {
-      printHelp();
-      process.exit(0);
-    }
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--dataset-id') datasetId = args[++index] ?? '';
+    else if (arg === '--out') outPath = args[++index] ?? '';
+    else if (arg === '--validation-out') validationOut = args[++index] ?? '';
+    else if (arg === '--validation-ratio') validationRatio = parseFloat(args[++index] ?? '');
+    else if (arg === '--allow-small') allowSmall = true;
+    else if (arg === '--help') help = true;
   }
 
-  if (!datasetId || !outPath) {
-    console.error('Error: --dataset-id and --out are required.');
-    printHelp();
-    process.exit(1);
+  return {
+    datasetId,
+    outPath,
+    validationOut,
+    validationRatio,
+    allowSmall,
+    help,
+  };
+}
+
+const normalizeText = (value) =>
+  typeof value === 'string' ? value.replace(/\u0000/g, '').trim() : '';
+
+const normalizeRole = (role) => {
+  if (role === 'assistant' || role === 'model') {
+    return 'assistant';
+  }
+  if (role === 'system') {
+    return 'system';
+  }
+  return 'user';
+};
+
+export function convertExampleToHfChatRecord(example) {
+  const normalizedMessages = Array.isArray(example.inputMessages)
+    ? example.inputMessages
+        .map((message) => ({
+          role: normalizeRole(message?.role),
+          content: normalizeText(message?.content),
+        }))
+        .filter((message) => message.content.length > 0)
+    : [];
+
+  const idealResponse = normalizeText(example.idealResponse);
+
+  if (normalizedMessages.length === 0 || idealResponse.length === 0) {
+    return null;
   }
 
-  const examples = await prisma.trainingExample.findMany({
-    where: { datasetId, status: 'APPROVED' },
-    orderBy: { createdAt: 'asc' },
-  });
+  const messages = normalizedMessages.some((message) => message.role === 'system')
+    ? normalizedMessages
+    : [{ role: 'system', content: DEFAULT_SYSTEM_MESSAGE }, ...normalizedMessages];
 
-  if (examples.length < 20 && !allowSmall) {
-    console.error(`Error: Dataset only has ${examples.length} approved examples. Need at least 20, or pass --allow-small.`);
-    process.exit(1);
+  return {
+    messages: [...messages, { role: 'assistant', content: idealResponse }],
+  };
+}
+
+export function collectApprovedRecords(examples) {
+  return examples
+    .filter((example) => {
+      if (typeof example.status !== 'string') {
+        return true;
+      }
+      return example.status.toUpperCase() === 'APPROVED';
+    })
+    .map((example) => ({
+      id: example.id,
+      record: convertExampleToHfChatRecord(example),
+    }))
+    .filter((item) => item.record !== null)
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .map((item) => item.record);
+}
+
+export function enforceDatasetSize(exampleCount, allowSmall) {
+  if (exampleCount < MIN_APPROVED_EXAMPLES && !allowSmall) {
+    throw new Error(
+      `Dataset only has ${exampleCount} exportable approved examples. Need at least ${MIN_APPROVED_EXAMPLES}, or pass --allow-small.`,
+    );
   }
-  if (examples.length < 100) {
-    console.warn(`Warning: Dataset has ${examples.length} approved examples. < 100 might not yield good results.`);
-  }
+}
 
-  // Deterministic shuffle
-  const shuffled = [...examples].sort((a, b) => {
-    // using ids for deterministic sort
-    return a.id.localeCompare(b.id);
-  });
-
-  const valCount = Math.floor(shuffled.length * validationRatio);
-  const validationList = validationOut ? shuffled.slice(0, valCount) : [];
-  const trainList = validationOut ? shuffled.slice(valCount) : shuffled;
-
-  function convertToChatML(example) {
-    const inputMsg = (example.inputMessages || []).map(msg => ({
-      role: msg.role === 'model' || msg.role === 'assistant' ? 'assistant' : msg.role,
-      content: msg.content
-    }));
-
-    if (!inputMsg.some(m => m.role === 'system')) {
-      inputMsg.unshift({
-        role: 'system',
-        content: "Bạn là trợ lý học tập AI. Bạn sẽ giúp học sinh với bài tập một cách chính xác và cẩn thận."
-      });
-    }
-
-    if (!example.idealResponse) {
-      return null;
-    }
-
+export function splitRecords(records, validationRatio = 0.1, includeValidation = false) {
+  if (!includeValidation) {
     return {
-      messages: [
-        ...inputMsg,
-        { role: 'assistant', content: example.idealResponse }
-      ]
+      trainRecords: records,
+      validationRecords: [],
     };
   }
 
-  function writeJsonl(list, filePath) {
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    const ws = fs.createWriteStream(filePath, { encoding: 'utf8' });
-    let count = 0;
-    for (const ex of list) {
-      const chatML = convertToChatML(ex);
-      if (chatML) {
-        ws.write(JSON.stringify(chatML) + '\n');
-        count++;
-      }
-    }
-    ws.end();
-    return count;
-  }
-
-  const trainCount = writeJsonl(trainList, outPath);
-  console.log(`Exported ${trainCount} training examples to ${outPath}`);
-
-  if (validationOut) {
-    const valCountReal = writeJsonl(validationList, validationOut);
-    console.log(`Exported ${valCountReal} validation examples to ${validationOut}`);
-  }
-
-  await prisma.$disconnect();
+  const validationCount = Math.floor(records.length * validationRatio);
+  return {
+    trainRecords: records.slice(validationCount),
+    validationRecords: records.slice(0, validationCount),
+  };
 }
 
-main().catch(err => {
-  console.error(err);
-  prisma.$disconnect();
-  process.exit(1);
-});
+export function serializeRecordsToJsonl(records) {
+  if (records.length === 0) {
+    return '';
+  }
+
+  return `${records.map((record) => JSON.stringify(record)).join('\n')}\n`;
+}
+
+export function writeJsonl(filePathValue, records) {
+  fs.mkdirSync(path.dirname(filePathValue), { recursive: true });
+  fs.writeFileSync(filePathValue, serializeRecordsToJsonl(records), 'utf8');
+  return records.length;
+}
+
+export async function runExport(argv = process.argv.slice(2), prisma = new PrismaClient()) {
+  const options = parseCliArgs(argv);
+
+  if (options.help) {
+    printHelp();
+    return { code: 0, exportedTrainCount: 0, exportedValidationCount: 0 };
+  }
+
+  if (!options.datasetId || !options.outPath) {
+    throw new Error('--dataset-id and --out are required.');
+  }
+
+  const examples = await prisma.trainingExample.findMany({
+    where: { datasetId: options.datasetId, status: 'APPROVED' },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  const exportableRecords = collectApprovedRecords(examples);
+  enforceDatasetSize(exportableRecords.length, options.allowSmall);
+
+  if (exportableRecords.length < 100) {
+    console.warn(
+      `Warning: Dataset has ${exportableRecords.length} exportable approved examples. < 100 might not yield good results.`,
+    );
+  }
+
+  const { trainRecords, validationRecords } = splitRecords(
+    exportableRecords,
+    options.validationRatio,
+    Boolean(options.validationOut),
+  );
+
+  const exportedTrainCount = writeJsonl(options.outPath, trainRecords);
+  console.log(`Exported ${exportedTrainCount} training examples to ${options.outPath}`);
+
+  let exportedValidationCount = 0;
+  if (options.validationOut) {
+    exportedValidationCount = writeJsonl(options.validationOut, validationRecords);
+    console.log(
+      `Exported ${exportedValidationCount} validation examples to ${options.validationOut}`,
+    );
+  }
+
+  return {
+    code: 0,
+    exportedTrainCount,
+    exportedValidationCount,
+  };
+}
+
+const runFromCli = async () => {
+  const prisma = new PrismaClient();
+  try {
+    await runExport(process.argv.slice(2), prisma);
+    await prisma.$disconnect();
+    process.exit(0);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`Error: ${message}`);
+    printHelp();
+    await prisma.$disconnect();
+    process.exit(1);
+  }
+};
+
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  await runFromCli();
+}

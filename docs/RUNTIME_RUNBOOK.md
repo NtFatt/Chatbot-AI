@@ -35,6 +35,9 @@ Use these commands for runtime validation in this workspace:
 ```env
 L3_ALLOW_EXTERNAL_FALLBACK=false
 L3_INTERNAL_MODEL_NAME=internal-l3-tutor-v1
+LOCAL_LORA_ENABLED=false
+LOCAL_LORA_BASE_URL=http://localhost:8008
+LOCAL_LORA_MODEL=local-lora-tutor-v1
 ```
 
 Default behavior:
@@ -42,6 +45,17 @@ Default behavior:
 - Level 3 does not call Gemini/OpenAI.
 - External API mode still does.
 - Local fallback stays enabled if the internal tutor path fails.
+
+## Low-L4 Local LoRA path
+
+- `local_lora` is an internal backend provider, not a frontend-direct model call.
+- It only runs when a ready active `local_lora` model version is selected in the model registry.
+- In `learning_engine_l3`, the route is:
+  - active ready model override (`local_lora` or other supported runtime)
+  - `InternalL3TutorModelService`
+  - safe local study fallback
+  - optional external fallback only when `L3_ALLOW_EXTERNAL_FALLBACK=true`
+- Local LoRA automated coverage is deterministic and mock-based. A real trained adapter is still a separate validation milestone.
 
 ## Manual smoke checklist
 
@@ -95,6 +109,17 @@ Check API logs for `Internal L3 Tutor failed`.
 ### AI Lab shows Internal L3 Tutor but evals cannot benchmark it
 
 This is expected today. The eval runner benchmarks external or fine-tuned OpenAI/Gemini runtime adapters. Internal L3 Tutor remains visible in the model registry panel but is filtered out of the benchmark model-version picker.
+
+### Local LoRA does not activate in Learning Engine mode
+
+Check:
+
+- `LOCAL_LORA_ENABLED=true`
+- the local server is reachable at `LOCAL_LORA_BASE_URL`
+- the target model version is `ready` and active in the `local_lora` runtime group
+- `pnpm test` still passes after any Local LoRA config change
+
+If the local server is offline, the router should fall back to `Internal L3 Tutor` without touching Gemini/OpenAI unless `L3_ALLOW_EXTERNAL_FALLBACK=true`.
 
 ## Health fields
 

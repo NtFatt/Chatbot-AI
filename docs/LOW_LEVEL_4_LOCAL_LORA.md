@@ -1,35 +1,67 @@
-# Low Level 4 Local LoRA Setup
+# Low Level 4 Local LoRA
 
-## Overview
-This document describes how to train and serve a Local LoRA model for the Vietnamese Study Assistant, upgrading it to Level 4 (L4). The L4 runtime runs locally and acts as the primary learning engine when enabled, with `internal_l3_tutor` serving as the fallback.
+## Scope
 
-## 1. Export Dataset
-First, approve at least 20 `TrainingExamples` in the AI Lab UI.
-Run the dataset export script to generate a JSONL file:
+This repository includes a **Low Level 4-ready Local LoRA integration**, not a claimed full Level 4 runtime.
+
+What is validated today:
+
+- `local_lora` exists as a backend provider behind `ModelGatewayService`
+- `learning_engine_l3` can route to an active `local_lora` model version first
+- Local LoRA failure falls back to `internal_l3_tutor`
+- External fallback from L3 remains opt-in via `L3_ALLOW_EXTERNAL_FALLBACK=true`
+- Dataset export, python dataset validation, and mock/local inference scripts have deterministic automated coverage
+
+What is **not** claimed today:
+
+- a real trained adapter checkpoint
+- production-grade local model serving throughput
+- a fully validated Level 4 browser/demo flow with trained weights
+
+## Deterministic validation
+
+Automated coverage now includes:
+
+- `apps/api/test/local-lora.provider.test.ts`
+- `apps/api/test/model-gateway.service.test.ts`
+- `apps/api/test/ai-runtime-router.test.ts`
+- `apps/api/test/export-l4-dataset.test.ts`
+- `apps/api/test/fine-tune-adapters.test.ts`
+- `ml/tests/test_validate_dataset.py`
+
+These tests do **not** call Gemini/OpenAI and do **not** load a real local LLM.
+
+## Real Local LoRA workflow
+
+1. Curate and approve examples in AI Lab.
+2. Export a dataset:
+
 ```bash
-node scripts/export-l4-dataset.mjs --dataset-id <id> --out ml/datasets/train.jsonl --validation-out ml/datasets/val.jsonl
+node scripts/export-l4-dataset.mjs --dataset-id <id> --out ml/datasets/train.jsonl --validation-out ml/datasets/val.jsonl --allow-small
 ```
 
-## 2. Train Local LoRA
-Navigate to the `ml` workspace. It uses standard Hugging Face tools (`transformers`, `peft`, `trl`).
-Install requirements:
-```bash
-pip install transformers datasets peft trl torch pyyaml
-```
-Run the training script (it defaults to mocking training if no GPU is found, for local dev testing):
-```bash
-python ml/scripts/train_lora_sft.py --config ml/configs/l4-low-sft.yaml --dataset ml/datasets/train.jsonl
-```
-This generates the adapter in `ml/adapters/local-lora-tutor-v1`.
+3. Validate the JSONL:
 
-## 3. Serve Local Inference
-Start the FastAPI mock/real server:
 ```bash
-pip install fastapi uvicorn
-python ml/scripts/serve_local_lora.py
+python ml/scripts/validate_dataset.py ml/datasets/train.jsonl
 ```
-This runs an inference provider on `http://localhost:8008`.
 
-## 4. API Backend Integration
-The Node API uses `LOCAL_LORA_ENABLED=true` in `.env` to load the `LocalLoraProvider`.
-When a session is set to `learning_engine_l3`, it will attempt to use `local_lora` if configured in the model registry. If `local_lora` is unavailable or errors out, it falls back gracefully to `internal_l3_tutor`.
+4. Train a local adapter when a real ML environment is available:
+
+```bash
+python ml/scripts/train_lora_sft.py --config ml/configs/l4-low-sft.yaml --dataset ml/datasets/train.jsonl --validation ml/datasets/val.jsonl
+```
+
+5. Serve the local inference endpoint:
+
+```bash
+python ml/scripts/serve_local_lora.py --mock
+```
+
+6. Activate a ready `local_lora` model version in AI Lab / model registry.
+7. Run browser smoke and confirm the provider badge shows `Local LoRA Tutor`.
+
+## Safety
+
+- Do not commit `.env`, API keys, datasets with real user content, adapter checkpoints, model weights, or generated outputs.
+- Keep `Internal L3 Tutor` enabled as the safe fallback path until a real Local LoRA adapter is trained and validated.

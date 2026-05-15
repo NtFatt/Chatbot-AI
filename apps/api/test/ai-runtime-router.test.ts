@@ -168,6 +168,42 @@ describe('AiRuntimeRouterService', () => {
     expect(result.modelVersionId).toBe('mv-openai');
   });
 
+  it('routes active ready local_lora models through the gateway before falling back to the internal tutor', async () => {
+    modelRegistry.getActiveLearningEngineModel.mockResolvedValueOnce(
+      createActiveModel({
+        id: 'mv-local-lora',
+        name: 'Local LoRA Tutor',
+        provider: 'local_lora',
+        baseModel: 'local-lora-tutor-v1',
+      }),
+    );
+    modelGateway.generateSingle.mockResolvedValueOnce({
+      provider: 'local_lora',
+      model: 'local-lora-tutor-v1',
+      modelVersionId: 'mv-local-lora',
+      providerRequestId: 'req-local-lora-1',
+      text: 'Local LoRA response',
+      finishReason: 'stop',
+      latencyMs: 140,
+      usage: { inputTokens: 9, outputTokens: 14, totalTokens: 23 },
+    });
+
+    const result = await router.generate(createBaseInput({ aiRuntimeMode: 'learning_engine_l3' }));
+
+    expect(modelGateway.generateSingle).toHaveBeenCalledTimes(1);
+    expect(internalTutor.generate).not.toHaveBeenCalled();
+    expect(orchestrator.generate).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      provider: 'local_lora',
+      model: 'local-lora-tutor-v1',
+      modelVersionId: 'mv-local-lora',
+      aiRuntimeMode: 'learning_engine_l3',
+      learningEngineUsed: true,
+      externalFallbackUsed: false,
+      fallbackUsed: false,
+    });
+  });
+
   it('falls back to internal_l3_tutor when the gateway path fails', async () => {
     modelRegistry.getActiveLearningEngineModel.mockResolvedValueOnce(
       createActiveModel({
@@ -187,6 +223,26 @@ describe('AiRuntimeRouterService', () => {
     expect(result.provider).toBe('internal_l3_tutor');
   });
 
+  it('falls back from local_lora to internal_l3_tutor without touching external providers by default', async () => {
+    modelRegistry.getActiveLearningEngineModel.mockResolvedValueOnce(
+      createActiveModel({
+        id: 'mv-local-lora',
+        provider: 'local_lora',
+        baseModel: 'local-lora-tutor-v1',
+      }),
+    );
+    modelGateway.generateSingle.mockRejectedValueOnce(new Error('LOCAL_LORA_OFFLINE'));
+    internalTutor.generate.mockResolvedValueOnce(createMockAiResult());
+
+    const result = await router.generate(createBaseInput({ aiRuntimeMode: 'learning_engine_l3' }));
+
+    expect(modelGateway.generateSingle).toHaveBeenCalledTimes(1);
+    expect(internalTutor.generate).toHaveBeenCalledTimes(1);
+    expect(orchestrator.generate).not.toHaveBeenCalled();
+    expect(result.provider).toBe('internal_l3_tutor');
+    expect(result.externalFallbackUsed).toBe(false);
+  });
+
   it('uses the safe local fallback when the internal tutor fails and external fallback is disabled', async () => {
     modelRegistry.getActiveLearningEngineModel.mockResolvedValueOnce(createActiveModel());
     internalTutor.generate.mockRejectedValueOnce(new Error('INTERNAL_L3_FAILURE'));
@@ -197,6 +253,34 @@ describe('AiRuntimeRouterService', () => {
     expect(result.provider).toBe('internal_l3_tutor');
     expect(result.fallbackUsed).toBe(true);
     expect(result.model).toBe('local-study-fallback');
+  });
+
+  it('allows a local_lora route to reach external fallback only when the env flag is enabled', async () => {
+    env.L3_ALLOW_EXTERNAL_FALLBACK = true;
+    modelRegistry.getActiveLearningEngineModel.mockResolvedValueOnce(
+      createActiveModel({
+        id: 'mv-local-lora',
+        provider: 'local_lora',
+        baseModel: 'local-lora-tutor-v1',
+      }),
+    );
+    modelGateway.generateSingle.mockRejectedValueOnce(new Error('LOCAL_LORA_OFFLINE'));
+    internalTutor.generate.mockRejectedValueOnce(new Error('INTERNAL_L3_FAILURE'));
+    orchestrator.generate.mockResolvedValueOnce(
+      createMockAiResult({
+        provider: 'GEMINI',
+        model: 'gemini-2.5-flash',
+        externalFallbackUsed: false,
+      }),
+    );
+
+    const result = await router.generate(createBaseInput({ aiRuntimeMode: 'learning_engine_l3' }));
+
+    expect(modelGateway.generateSingle).toHaveBeenCalledTimes(1);
+    expect(internalTutor.generate).toHaveBeenCalledTimes(1);
+    expect(orchestrator.generate).toHaveBeenCalledTimes(1);
+    expect(result.provider).toBe('GEMINI');
+    expect(result.externalFallbackUsed).toBe(true);
   });
 
   it('allows explicit external fallback only when L3_ALLOW_EXTERNAL_FALLBACK=true', async () => {

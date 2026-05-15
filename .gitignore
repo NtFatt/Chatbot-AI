@@ -23,6 +23,8 @@ output/
 ml/datasets/*.jsonl
 ml/outputs/**
 ml/adapters/**
+__pycache__/
+*.pyc
 Chatbot-AI-codex-initial-import.zip
 *.safetensors
 *.bin

@@ -52,6 +52,7 @@ describe('Fine-tune adapters', () => {
 
     expect(result.status).toBe('queued');
     expect(result.metadata?.adapter).toBe('local-lora-stub');
-    expect(String(result.metadata?.command)).toContain('train_lora.py');
+    expect(String(result.metadata?.command)).toContain('ml/scripts/train_lora_sft.py');
+    expect(String(result.metadata?.command)).toContain('--config ml/configs/l4-low-sft.yaml');
   });
 });
