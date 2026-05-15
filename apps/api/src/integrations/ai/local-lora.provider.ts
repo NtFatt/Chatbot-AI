@@ -1,15 +1,30 @@
-import type {
-  AIChatResult,
-  AiRuntimeMode,
-  AppLanguage,
-  ChatMessage,
-  RetrievalSnapshot,
-} from '@chatbot-ai/shared';
-
 import { env } from '../../config/env';
 import type { UsageService } from '../../modules/usage/usage.service';
 import type { AIProvider, AIProviderRequest, AIProviderResponse } from './ai.types';
-import { classifyProviderError, buildProviderFailureNotice } from './provider-runtime';
+import { classifyProviderError } from './provider-runtime';
+
+interface LocalLoraMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+interface LocalLoraCompletionChoice {
+  message?: {
+    content?: string;
+  };
+  finish_reason?: string;
+}
+
+interface LocalLoraUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+}
+
+interface LocalLoraCompletionResponse {
+  choices?: LocalLoraCompletionChoice[];
+  usage?: LocalLoraUsage;
+}
 
 export class LocalLoraProvider implements AIProvider {
   readonly key = 'local_lora';
@@ -18,7 +33,7 @@ export class LocalLoraProvider implements AIProvider {
 
   async generate(
     request: AIProviderRequest,
-    callbacks?: { onChunk?: (chunk: string) => void }
+    callbacks?: { onChunk?: (chunk: string) => void },
   ): Promise<AIProviderResponse> {
     const startedAt = Date.now();
 
@@ -27,20 +42,13 @@ export class LocalLoraProvider implements AIProvider {
     }
 
     try {
-      const apiMessages = [...request.messages];
-      if (request.systemPrompt) {
-        apiMessages.unshift({
-          role: 'assistant', // system prompts are often modeled as assistant or user in some templates, but let's use 'user' or 'system' if supported
-          content: request.systemPrompt,
-        } as any);
-      }
-
-      // Convert 'system' to standard if necessary, but we can pass systemPrompt in as a separate message
-      const formattedMessages = [];
+      const formattedMessages: LocalLoraMessage[] = [];
       if (request.systemPrompt) {
         formattedMessages.push({ role: 'system', content: request.systemPrompt });
       }
-      formattedMessages.push(...request.messages.map(m => ({ role: m.role, content: m.content })));
+      formattedMessages.push(
+        ...request.messages.map((message) => ({ role: message.role, content: message.content })),
+      );
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), env.LOCAL_LORA_TIMEOUT_MS);
@@ -65,8 +73,9 @@ export class LocalLoraProvider implements AIProvider {
         throw new Error(`Local inference server error: ${response.status} ${errorText}`);
       }
 
-      const data = await response.json() as any;
-      const generatedText = data.choices?.[0]?.message?.content || '';
+      const data = (await response.json()) as LocalLoraCompletionResponse;
+      const firstChoice = data.choices?.[0];
+      const generatedText = firstChoice?.message?.content ?? '';
 
       if (!generatedText) {
         throw new Error('Local inference server returned empty content');
@@ -74,7 +83,12 @@ export class LocalLoraProvider implements AIProvider {
 
       return {
         text: generatedText,
-        finishReason: data.choices?.[0]?.finish_reason || 'stop',
+        finishReason:
+          firstChoice?.finish_reason === 'stop' ||
+          firstChoice?.finish_reason === 'length' ||
+          firstChoice?.finish_reason === 'error'
+            ? firstChoice.finish_reason
+            : 'stop',
         latencyMs: Math.max(1, Date.now() - startedAt),
         usage: {
           inputTokens: data.usage?.prompt_tokens,
