@@ -47,12 +47,13 @@ Default behavior:
 
 1. Start `pnpm dev:api` and `pnpm dev:web`.
 2. Open the app and sign in as guest.
-3. Open a session and switch to `AI học tập Level 3`.
-4. Ask a Vietnamese study question.
-5. Confirm the assistant badge shows `AI học tập Level 3` or `L3 Tutor Model`, not Gemini/OpenAI.
-6. Switch to `API AI lớn`.
-7. Ask again and confirm the badge shows the real external provider.
-8. Check `GET /health` and confirm:
+3. Open a session and confirm the connection banner is hidden during a healthy socket connection.
+4. Ask a Vietnamese study question in the current session and confirm the reply appears without an `/api/chat/ask` fallback request.
+5. Switch to `AI học tập Level 3` if needed and confirm the assistant badge shows `AI học tập Level 3` or `L3 Tutor Model`, not Gemini/OpenAI.
+6. Force a socket disconnect and confirm the connection banner appears plus the next send falls back to `POST /api/chat/ask`.
+7. Switch to `API AI lớn`.
+8. Ask again and confirm the badge shows the real external provider.
+9. Check `GET /health` and confirm:
    - `availableRuntimeModes`
    - `defaultRuntimeMode`
    - `l3InternalModel`
@@ -70,6 +71,17 @@ Check:
 - The returned assistant message metadata includes `provider`, `aiRuntimeMode`, and `externalFallbackUsed`
 
 If `externalFallbackUsed=true`, the external provider badge is expected and should display as `L3 fallback · ...`.
+
+### The UI still says realtime is disconnected
+
+Check:
+
+- `window.__CHATBOT_AI_SOCKET_TEST__?.state()` in dev tools returns `connected`
+- the dashboard session is still selected after login
+- `VITE_SOCKET_URL` still points at the API origin
+- `/health` is reachable and the API dev process is actually running
+
+If the socket test handle says `connected` but the banner still stays visible, the client transport lifecycle is out of sync and `apps/web/src/hooks/use-chat-socket.ts` should be rechecked before changing server auth or CORS.
 
 ### L3 returns the local safe fallback
 

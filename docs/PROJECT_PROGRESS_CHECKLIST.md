@@ -1,6 +1,6 @@
 # Chatbot AI - Project Progress Checklist
 
-**Last updated:** 2026-05-14  
+**Last updated:** 2026-05-15  
 **Repository:** `D:\LEARNCODE\Project_CV\Chatbot AI`  
 **Release status:** NOT RELEASE READY
 
@@ -9,10 +9,10 @@
 | Field | Value |
 | --- | --- |
 | Project | Chatbot AI - Vietnamese Study Assistant |
-| Overall status | AI-L4 local LoRA integration is complete, including ML workspace setup, mock/real inference server, backend AI provider `local_lora`, and dataset exporter. The `learning_engine_l3` path now correctly handles Local LoRA overrides. |
-| Current active task | `[~]` Stabilize the normal dev-stack realtime transport so manual smoke no longer shows `Realtime disconnected. Using fallback.` while the HTTP fallback path is working. |
-| Next recommended task | Finalize test coverage for `LocalLoraProvider` and the ML scripts. |
-| Risks / blockers | `[~]` Need to ensure CI pipeline has python requirements for the new ML scripts if we decide to run them. `[~]` Realtime disconnects still appear in normal dev stack. |
+| Overall status | AI-L4 local LoRA integration is complete, including ML workspace setup, mock/real inference server, backend AI provider `local_lora`, dataset exporter, and a stable normal dev-stack realtime chat transport with HTTP fallback preserved. |
+| Current active task | `[~]` Expand `LocalLoraProvider` and ML-script validation so the low-L4 path has stronger automated coverage beyond baseline compile checks. |
+| Next recommended task | Add deterministic backend tests for `LocalLoraProvider` success/failure behavior and decide whether Python dependencies should be part of CI or stay local-only. |
+| Risks / blockers | `[~]` Python ML tooling is still local-environment dependent and not yet part of the standard CI validation contract. `[~]` Direct `node apps/api/dist/server.js` from the repo root is still not the standardized startup path for this workspace. |
 
 ## 2. Progress Legend
 
@@ -51,16 +51,16 @@
 
 | Check | Status | Evidence |
 | --- | --- | --- |
-| Prisma schema validation | `[x] DONE` | `pnpm exec prisma validate --schema prisma/schema.prisma` → valid schema (2026-05-13). |
-| Prisma migrate status | `[x] DONE` | `pnpm exec prisma migrate status --schema prisma/schema.prisma` → database schema is up to date with `12` migrations (2026-05-13). |
-| Prisma generate | `[x] DONE` | `pnpm exec prisma generate --schema prisma/schema.prisma` passed after stopping a lingering Vite process that held `query_engine-windows.dll.node` (2026-05-13). |
-| Lint | `[x] DONE` | `pnpm lint` passed for shared, API, and web (2026-05-13). |
-| Typecheck | `[x] DONE` | `pnpm typecheck` passed for shared, API, and web (2026-05-13). |
-| Unit/component tests | `[x] DONE` | `pnpm test` passed: API `27` files / `156` tests, web `17` files / `136` tests, total `44` files / `292` tests (2026-05-13). |
-| Build | `[x] DONE` | `pnpm build` passed for shared declarations, API `tsup`, and web `vite build` (2026-05-13). |
-| Playwright E2E | `[x] DONE` | `pnpm test:e2e` passed `6/6` specs on 2026-05-13. |
-| AI doctor | `[x] DONE` | `pnpm ai:doctor` reported both real providers configured and `/health` reachable with `l3InternalModel=enabled`, `l3InternalModelName=internal-l3-tutor-v1`, and `l3ExternalFallbackAllowed=false` (2026-05-13). |
-| Manual browser smoke | `[x] DONE` | On `pnpm dev:api` + `pnpm dev:web`: guest login succeeded, session mode switched to `AI học tập Level 3`, the question `Giải thích lập trình hướng đối tượng trong Java cho người mới học, có ví dụ ngắn.` returned an answer marked `AI học tập Level 3 / L3 Tutor Model`, mode switched back to `API AI lớn`, and the follow-up question `Cho ví dụ Java ngắn minh hoạ tính đóng gói trong OOP.` returned a real Gemini answer. `/health` and AI Lab model visibility were also verified (2026-05-13). |
+| Prisma schema validation | `[x] DONE` | `pnpm exec prisma validate --schema prisma/schema.prisma` → valid schema (2026-05-15). |
+| Prisma migrate status | `[x] DONE` | `pnpm exec prisma migrate status --schema prisma/schema.prisma` → database schema is up to date with `12` migrations (2026-05-15). |
+| Prisma generate | `[x] DONE` | `pnpm exec prisma generate --schema prisma/schema.prisma` passed after stopping the live API dev process that held `query_engine-windows.dll.node` on Windows (2026-05-15). |
+| Lint | `[x] DONE` | `pnpm lint` passed for shared, API, and web (2026-05-15). |
+| Typecheck | `[x] DONE` | `pnpm typecheck` passed for shared, API, and web (2026-05-15). |
+| Unit/component tests | `[x] DONE` | `pnpm test` passed: API `28` files / `162` tests, web `17` files / `121` tests, total `45` files / `283` tests (2026-05-15). |
+| Build | `[x] DONE` | `pnpm build` passed for shared declarations, API `tsup`, and web `vite build` (2026-05-15). |
+| Playwright E2E | `[x] DONE` | `pnpm test:e2e` passed `6/6` specs on 2026-05-15 after adding a realtime-connected assertion before the deterministic fallback path. |
+| AI doctor | `[x] DONE` | `pnpm ai:doctor` reported both real providers configured and `/health` reachable with `l3InternalModel=enabled`, `l3InternalModelName=internal-l3-tutor-v1`, and `l3ExternalFallbackAllowed=false` (2026-05-15). |
+| Manual browser smoke | `[x] DONE` | On `pnpm dev:api` + `pnpm dev:web`: the dashboard no longer showed `Realtime disconnected. Using fallback.` while the socket test handle reported `connected`, a normal Level 3 send produced an assistant reply without any `/api/chat/ask` request, then a forced socket disconnect restored the connection banner and the next send cleanly used `POST /api/chat/ask` fallback (2026-05-15). |
 | Provider-backed smoke | `[x] DONE` | External API mode produced a live provider-backed response labeled `GEMINI / gemini-2.5-flash` during the manual browser smoke on 2026-05-13. |
 
 ## 5. Open / Deferred Work
@@ -68,7 +68,7 @@
 | Status | Item | Evidence / current limit |
 | --- | --- | --- |
 | `[x]` | Uncommitted working-tree changes | The internal L3 runtime work has been committed and merged with the new L4 Local LoRA integration. |
-| `[~]` | Realtime transport on normal dev stack | Manual smoke on `pnpm dev:api` + `pnpm dev:web` completed successfully, but the workspace still showed `Realtime disconnected. Using fallback.` while HTTP chat requests worked. WebSocket/realtime transport was not validated as healthy in the same pass. |
+| `[x]` | Realtime transport on normal dev stack | Fixed on 2026-05-15: `useChatSocket` now attaches socket lifecycle in effects, recognizes an already-connected socket immediately, and keeps HTTP fallback only for genuine socket loss. Validated by browser smoke, new hook tests, updated socket integration tests, and `pnpm test:e2e` (`6/6`). |
 | `[~]` | Standalone built API boot note | Direct `node apps/api/dist/server.js` from the repo root is still not the standardized env-loading path for this workspace; use `pnpm dev:api`, `pnpm dev`, or the E2E stack for validation until built-output startup is normalized. |
 
 ## 6. Documentation

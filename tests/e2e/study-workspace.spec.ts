@@ -156,10 +156,28 @@ const forceHttpFallback = async (page: Page) => {
   await expect(page.getByTestId('connection-banner')).toBeVisible({ timeout: 15_000 });
 };
 
+const expectRealtimeConnected = async (page: Page) => {
+  await expect(page.getByTestId('connection-banner')).toBeHidden({ timeout: 20_000 });
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() =>
+          (
+            window as Window & {
+              __CHATBOT_AI_SOCKET_TEST__?: { state: () => string };
+            }
+          ).__CHATBOT_AI_SOCKET_TEST__?.state() ?? 'missing',
+        ),
+      { timeout: 20_000 },
+    )
+    .toBe('connected');
+};
+
 test.describe('study workspace', () => {
   test('logs in, creates a session, and receives an assistant response', async ({ page }) => {
     await installChatMocks(page.context());
     await loginAndCreateSession(page);
+    await expectRealtimeConnected(page);
     await forceHttpFallback(page);
 
     await page.getByTestId('chat-composer-input').fill('Giải thích ngắn gọn về chuẩn hóa dữ liệu trong CSDL.');
@@ -209,6 +227,7 @@ test.describe('study workspace', () => {
     });
 
     await loginAndCreateSession(page);
+    await expectRealtimeConnected(page);
 
     await page.getByTestId('chat-composer-input').fill('Cho mình ví dụ về khóa ngoại.');
 
@@ -236,6 +255,7 @@ test.describe('study workspace', () => {
 
   test('allows provider switching and shows material recommendations in settings', async ({ page }) => {
     await loginAndCreateSession(page);
+    await expectRealtimeConnected(page);
 
     // Open settings
     await page.getByTestId('open-settings').click();

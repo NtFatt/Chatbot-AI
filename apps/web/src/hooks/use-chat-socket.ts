@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type {
   AIChunkEvent,
@@ -120,18 +120,37 @@ const getLatestSyncCursor = (messages: ChatMessage[]) =>
 export const useChatSocket = (sessionId: string | null) => {
   const queryClient = useQueryClient();
   const accessToken = useAuthStore((state) => state.accessToken);
+  const bootstrapped = useAuthStore((state) => state.bootstrapped);
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   const [recoveryState, setRecoveryState] = useState<RecoveryState>('idle');
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const activeSessionIdRef = useRef<string | null>(sessionId);
+  const socketRef = useRef<ReturnType<typeof chatSocketClient.connect> | null>(null);
 
-  const socket = useMemo(() => {
-    if (!accessToken) {
-      return null;
+  useEffect(() => {
+    if (!bootstrapped || !accessToken) {
+      chatSocketClient.disconnect();
+      socketRef.current = null;
+      setConnectionState('disconnected');
+      setRecoveryState('idle');
+      setRecoveryError(null);
+      return;
     }
 
-    return chatSocketClient.connect(accessToken);
-  }, [accessToken]);
+    const socket = chatSocketClient.connect(accessToken);
+    socketRef.current = socket;
+
+    if (socket.connected) {
+      setConnectionState('connected');
+    }
+
+    return () => {
+      if (socketRef.current === socket) {
+        chatSocketClient.disconnect();
+        socketRef.current = null;
+      }
+    };
+  }, [accessToken, bootstrapped]);
 
   useEffect(() => {
     activeSessionIdRef.current = sessionId;
@@ -195,6 +214,8 @@ export const useChatSocket = (sessionId: string | null) => {
   };
 
   const runSessionRecovery = async (targetSessionId: string) => {
+    const socket = socketRef.current;
+
     if (!socket?.connected) {
       return;
     }
@@ -224,6 +245,8 @@ export const useChatSocket = (sessionId: string | null) => {
   };
 
   useEffect(() => {
+    const socket = socketRef.current;
+
     if (!socket) {
       setConnectionState('disconnected');
       setRecoveryState('idle');
@@ -233,10 +256,6 @@ export const useChatSocket = (sessionId: string | null) => {
 
     const handleConnect = () => {
       setConnectionState('connected');
-      const nextSessionId = activeSessionIdRef.current;
-      if (nextSessionId) {
-        void runSessionRecovery(nextSessionId);
-      }
     };
 
     const handleDisconnect = () => {
@@ -252,7 +271,7 @@ export const useChatSocket = (sessionId: string | null) => {
     };
 
     const handleConnectError = () => {
-      setConnectionState('disconnected');
+      setConnectionState(socket.active ? 'reconnecting' : 'disconnected');
     };
 
     const handleMessageAccepted = (event: MessageAcceptedEvent) => {
@@ -405,6 +424,10 @@ export const useChatSocket = (sessionId: string | null) => {
     socket.on('chat:session_updated', handleSessionUpdated);
     socket.on('chat:error', handleChatError);
 
+    if (socket.connected) {
+      handleConnect();
+    }
+
     return () => {
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
@@ -419,15 +442,17 @@ export const useChatSocket = (sessionId: string | null) => {
       socket.off('chat:session_updated', handleSessionUpdated);
       socket.off('chat:error', handleChatError);
     };
-  }, [queryClient, socket]);
+  }, [accessToken, bootstrapped, queryClient]);
 
   useEffect(() => {
-    if (!socket || !sessionId || !socket.connected) {
+    const socket = socketRef.current;
+
+    if (!socket || !sessionId || connectionState !== 'connected' || !socket.connected) {
       return;
     }
 
     void runSessionRecovery(sessionId);
-  }, [queryClient, sessionId, socket]);
+  }, [connectionState, queryClient, sessionId, accessToken, bootstrapped]);
 
   const sendMessage = async (input: SendMessagePayload) => {
     const optimisticUser = optimisticMessage({
@@ -452,6 +477,8 @@ export const useChatSocket = (sessionId: string | null) => {
           upsertMessage(upsertMessage(items, optimisticUser), optimisticAssistant),
         ),
     );
+
+    const socket = socketRef.current;
 
     if (socket?.connected) {
       try {
@@ -517,6 +544,8 @@ export const useChatSocket = (sessionId: string | null) => {
           return nextItems;
         }),
     );
+
+    const socket = socketRef.current;
 
     if (socket?.connected) {
       try {

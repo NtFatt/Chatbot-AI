@@ -45,6 +45,13 @@ class ChatSocketClient {
 
   connect(token: string) {
     if (this.socket && this.currentToken === token) {
+      this.socket.auth = {
+        token,
+      };
+      if (!this.socket.connected && !this.socket.active) {
+        this.socket.connect();
+      }
+      this.syncTestHandle();
       return this.socket;
     }
 

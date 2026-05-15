@@ -162,6 +162,106 @@ describe('chat socket flow', () => {
     expect(chunks.join('')).toBe('Hello there');
   });
 
+  it('joins the requested session room', async () => {
+    const sessionId = 'b6d6ce33-e15e-41ba-b592-b3c89f7aeb6f';
+
+    const ack = await new Promise<{ ok: boolean }>((resolve) => {
+      clientSocket.emit(
+        'chat:join_session',
+        {
+          sessionId,
+        },
+        (response: { ok: boolean }) => resolve(response),
+      );
+    });
+
+    expect(ack.ok).toBe(true);
+    if (!clientSocket.id) {
+      throw new Error('client socket id missing');
+    }
+
+    expect(Boolean(io.sockets.adapter.rooms.get(sessionId)?.has(clientSocket.id))).toBe(true);
+  });
+
+  it('syncs existing messages through ack metadata', async () => {
+    chatService.syncMessages = async () => [
+      {
+        id: 'message-1',
+        sessionId: 'b6d6ce33-e15e-41ba-b592-b3c89f7aeb6f',
+        clientMessageId: 'message-1',
+        senderType: 'assistant',
+        content: 'Recovered answer',
+        status: 'sent',
+        provider: 'GEMINI',
+        model: 'gemini-2.5-flash',
+        latencyMs: 10,
+        errorCode: null,
+        createdAt: '2026-05-15T00:00:00.000Z',
+        updatedAt: '2026-05-15T00:00:05.000Z',
+      },
+    ];
+
+    const receivedMessages: Array<{ content: string }> = [];
+    clientSocket.on('chat:message_received', (event) => {
+      receivedMessages.push(event.message);
+    });
+
+    const ack = await new Promise<{
+      ok: boolean;
+      meta?: { cursor?: string; syncedCount?: number };
+    }>((resolve) => {
+      clientSocket.emit(
+        'chat:sync_state',
+        {
+          sessionId: 'b6d6ce33-e15e-41ba-b592-b3c89f7aeb6f',
+        },
+        (response: { ok: boolean; meta?: { cursor?: string; syncedCount?: number } }) =>
+          resolve(response),
+      );
+    });
+
+    expect(ack.ok).toBe(true);
+    expect(ack.meta).toEqual({
+      cursor: '2026-05-15T00:00:05.000Z',
+      syncedCount: 1,
+    });
+    expect(receivedMessages).toHaveLength(1);
+    expect(receivedMessages[0]).toMatchObject({ content: 'Recovered answer' });
+  });
+
+  it('returns a safe join_session error payload when the server throws unexpectedly', async () => {
+    chatService.getMessages = async () => {
+      throw new Error('database exploded');
+    };
+
+    const ack = await new Promise<{
+      ok: boolean;
+      error?: { code?: string; message?: string; details?: unknown };
+    }>((resolve) => {
+      clientSocket.emit(
+        'chat:join_session',
+        {
+          sessionId: 'b6d6ce33-e15e-41ba-b592-b3c89f7aeb6f',
+        },
+        (response: {
+          ok: boolean;
+          error?: { code?: string; message?: string; details?: unknown };
+        }) => resolve(response),
+      );
+    });
+
+    expect(ack).toEqual({
+      ok: false,
+      error: {
+        code: 'SOCKET_JOIN_FAILED',
+        message: 'Unable to join chat session.',
+        details: undefined,
+      },
+      requestId: expect.any(String),
+    });
+    expect(JSON.stringify(ack)).not.toContain('database exploded');
+  });
+
   it('retries a failed prompt using the payload message when the server copy is missing', async () => {
     const retryResult = new Promise<{ userMessage: { content: string }; assistantMessage: { content: string } }>(
       (resolve) => {
