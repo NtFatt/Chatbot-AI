@@ -26,8 +26,9 @@ class Message(BaseModel):
 class ChatCompletionRequest(BaseModel):
     model: str
     messages: List[Message]
-    temperature: Optional[float] = 0.7
-    max_tokens: Optional[int] = 96
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
+    max_new_tokens: Optional[int] = None
     top_p: Optional[float] = None
 
 
@@ -41,6 +42,29 @@ CUDA_AVAILABLE = False
 TRAINING_METADATA: Dict[str, Any] | None = None
 TRAINING_METADATA_PATH: str | None = None
 SERVING_DEVICE = "cpu"
+GENERATION_CONFIG: Dict[str, Any] = {
+    "max_new_tokens": 64,
+    "temperature": 0.2,
+    "top_p": 0.9,
+}
+CONTEXT_MAX_CHARS = 6000
+
+
+def read_generation_config_from_env() -> Dict[str, Any]:
+    max_new_tokens = int(os.environ.get("LOCAL_LORA_MAX_NEW_TOKENS", "64") or "64")
+    temperature = float(os.environ.get("LOCAL_LORA_TEMPERATURE", "0.2") or "0.2")
+    top_p = float(os.environ.get("LOCAL_LORA_TOP_P", "0.9") or "0.9")
+
+    return {
+        "max_new_tokens": max(16, min(max_new_tokens, 256)),
+        "temperature": max(0.0, min(temperature, 2.0)),
+        "top_p": max(0.1, min(top_p, 1.0)),
+    }
+
+
+def resolve_context_max_chars() -> int:
+    value = int(os.environ.get("LOCAL_LORA_CONTEXT_MAX_CHARS", "6000") or "6000")
+    return max(500, min(value, 20000))
 
 
 def build_startup_arg_parser() -> argparse.ArgumentParser:
@@ -98,12 +122,40 @@ def build_health_payload() -> Dict[str, Any]:
         "device": SERVING_DEVICE,
         "baseModel": TRAINING_METADATA.get("baseModel") if TRAINING_METADATA else None,
         "isMockTraining": TRAINING_METADATA.get("isMockTraining") if TRAINING_METADATA else MOCK_MODE,
+        "generationConfig": GENERATION_CONFIG,
+        "contextMaxChars": CONTEXT_MAX_CHARS,
     }
+
+
+def trim_prompt(prompt: str, max_chars: int) -> str:
+    if len(prompt) <= max_chars:
+        return prompt
+
+    head = max_chars // 2
+    tail = max_chars - head - 7
+    return f"{prompt[:head]}\n...\n{prompt[-tail:]}"
+
+
+def resolve_request_max_new_tokens(request: ChatCompletionRequest) -> int:
+    value = request.max_new_tokens if request.max_new_tokens is not None else request.max_tokens
+    if value is None:
+        value = GENERATION_CONFIG["max_new_tokens"]
+    return max(1, min(int(value), 256))
+
+
+def resolve_request_temperature(request: ChatCompletionRequest) -> float:
+    value = request.temperature if request.temperature is not None else GENERATION_CONFIG["temperature"]
+    return max(0.0, min(float(value), 2.0))
+
+
+def resolve_request_top_p(request: ChatCompletionRequest) -> float:
+    value = request.top_p if request.top_p is not None else GENERATION_CONFIG["top_p"]
+    return max(0.1, min(float(value), 1.0))
 
 
 @app.on_event("startup")
 def load_model() -> None:
-    global MODEL, TOKENIZER, MOCK_MODE, MODEL_NAME, ADAPTER_PATH, ADAPTER_LOADED, CUDA_AVAILABLE, TRAINING_METADATA, TRAINING_METADATA_PATH, SERVING_DEVICE
+    global MODEL, TOKENIZER, MOCK_MODE, MODEL_NAME, ADAPTER_PATH, ADAPTER_LOADED, CUDA_AVAILABLE, TRAINING_METADATA, TRAINING_METADATA_PATH, SERVING_DEVICE, GENERATION_CONFIG, CONTEXT_MAX_CHARS
     args, _ = build_startup_arg_parser().parse_known_args()
 
     MODEL = None
@@ -112,6 +164,8 @@ def load_model() -> None:
     TRAINING_METADATA = None
     TRAINING_METADATA_PATH = None
     SERVING_DEVICE = "cpu"
+    GENERATION_CONFIG = read_generation_config_from_env()
+    CONTEXT_MAX_CHARS = resolve_context_max_chars()
     MOCK_MODE = args.mock
     ADAPTER_PATH = args.adapter_dir
     MODEL_NAME = args.model_name or os.environ.get("LOCAL_LORA_MODEL", "local-lora-tutor-v1")
@@ -147,6 +201,8 @@ def load_model() -> None:
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
         CUDA_AVAILABLE = bool(torch.cuda.is_available())
+        if CUDA_AVAILABLE:
+            torch.backends.cuda.matmul.allow_tf32 = True
         SERVING_DEVICE = "cuda" if CUDA_AVAILABLE else "cpu"
         MODEL_NAME = args.model_name or TRAINING_METADATA.get("fineTunedModel") or TRAINING_METADATA.get("adapterName") or MODEL_NAME
         base_model = TRAINING_METADATA.get("baseModel") or "HuggingFaceTB/SmolLM2-135M-Instruct"
@@ -167,6 +223,9 @@ def load_model() -> None:
         MODEL = PeftModel.from_pretrained(base, str(adapter_dir))
         if CUDA_AVAILABLE:
             MODEL = MODEL.to("cuda")
+            model_device = str(next(MODEL.parameters()).device)
+            if not model_device.startswith("cuda"):
+                raise RuntimeError("CUDA is available but the Local LoRA model did not move to CUDA")
         MODEL.eval()
         ADAPTER_LOADED = True
         print(f"Loaded Local LoRA adapter from {adapter_dir} on {SERVING_DEVICE}")
@@ -223,18 +282,23 @@ async def chat_completions(request: ChatCompletionRequest) -> Dict[str, Any]:
             [{"role": message.role, "content": message.content} for message in request.messages],
             TOKENIZER,
         )
-        inputs = TOKENIZER(prompt, return_tensors="pt")
+        trimmed_prompt = trim_prompt(prompt, CONTEXT_MAX_CHARS)
+        inputs = TOKENIZER(trimmed_prompt, return_tensors="pt", truncation=True)
         inputs = {key: value.to(MODEL.device) for key, value in inputs.items()}
+        temperature = resolve_request_temperature(request)
+        max_new_tokens = resolve_request_max_new_tokens(request)
+        top_p = resolve_request_top_p(request)
 
-        with torch.no_grad():
+        with torch.inference_mode():
             generation_kwargs = {
-                "max_new_tokens": request.max_tokens,
-                "temperature": request.temperature,
-                "do_sample": (request.temperature or 0) > 0,
+                "max_new_tokens": max_new_tokens,
+                "temperature": temperature,
+                "do_sample": temperature > 0,
                 "pad_token_id": TOKENIZER.eos_token_id,
+                "use_cache": True,
             }
-            if request.top_p is not None:
-                generation_kwargs["top_p"] = request.top_p
+            if temperature > 0:
+                generation_kwargs["top_p"] = top_p
 
             outputs = MODEL.generate(
                 **inputs,

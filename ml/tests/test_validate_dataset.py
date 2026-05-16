@@ -51,6 +51,16 @@ class ValidateDatasetTests(unittest.TestCase):
 
         self.assertEqual(errors, [])
 
+    def test_duplicate_prompt_detection_fails(self):
+        errors = validate_dataset.validate_dataset_lines(
+            [
+                '{"messages":[{"role":"system","content":"Bạn là gia sư."},{"role":"user","content":"Giải thích OOP"},{"role":"assistant","content":"Câu trả lời 1."}]}',
+                '{"messages":[{"role":"system","content":"Bạn là gia sư."},{"role":"user","content":"Giải thích OOP"},{"role":"assistant","content":"Câu trả lời 2."}]}',
+            ]
+        )
+
+        self.assertIn("Line 2: Duplicate prompt content", errors)
+
 
 if __name__ == "__main__":
     unittest.main()

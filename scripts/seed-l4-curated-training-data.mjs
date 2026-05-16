@@ -3,117 +3,208 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import {
-  CURATED_DATASET_NAME,
-  CURATED_DATASET_DESCRIPTION,
-  buildCuratedTrainingExamples,
-  getCategoryDistribution,
-} from './data/l4-curated-examples-v2.mjs';
+  LATEST_STABLE_CURATED_VERSION,
+  getCuratedDatasetDefinition,
+} from './data/l4-curated-dataset-registry.mjs';
 
-export { CURATED_DATASET_NAME, CURATED_DATASET_DESCRIPTION, buildCuratedTrainingExamples, getCategoryDistribution };
+export { LATEST_STABLE_CURATED_VERSION, getCuratedDatasetDefinition };
+
+const latestDefinition = getCuratedDatasetDefinition(LATEST_STABLE_CURATED_VERSION);
+
+export const CURATED_DATASET_NAME = latestDefinition.name;
+export const CURATED_DATASET_DESCRIPTION = latestDefinition.description;
+export const buildCuratedTrainingExamples = (options = {}) =>
+  getCuratedDatasetDefinition(options.version).buildExamples();
+export const getCategoryDistribution = (options = {}) =>
+  getCuratedDatasetDefinition(options.version).getCategoryDistribution();
 
 function parseArgs(argv) {
-  let dryRun = false;
-  let limit = 0;
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--dry-run') dryRun = true;
-    if (argv[i] === '--limit') limit = parseInt(argv[++i] || '0', 10);
+  const options = {
+    dryRun: false,
+    limit: 0,
+    version: LATEST_STABLE_CURATED_VERSION,
+    datasetName: '',
+  };
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === '--dry-run') {
+      options.dryRun = true;
+    } else if (arg === '--limit') {
+      options.limit = parseInt(argv[++index] || '0', 10);
+    } else if (arg === '--version') {
+      options.version = argv[++index] || options.version;
+    } else if (arg === '--dataset-name') {
+      options.datasetName = argv[++index] || '';
+    }
   }
-  return { dryRun, limit };
+
+  return options;
 }
 
-export async function seedCuratedDataset(prisma = new PrismaClient(), options = {}) {
-  const { dryRun = false, limit = 0 } = options;
-  let examples = buildCuratedTrainingExamples();
-  if (limit > 0) examples = examples.slice(0, limit);
+const normalizePrompt = (inputMessages) =>
+  (Array.isArray(inputMessages) ? inputMessages : [])
+    .map((message) => (typeof message?.content === 'string' ? message.content.trim() : ''))
+    .filter(Boolean)
+    .join('\n')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
 
-  // Find or create dataset
+const buildDistribution = (examples) =>
+  examples.reduce((acc, example) => {
+    const category = example.learningMode || example.topic || 'unknown';
+    acc[category] = (acc[category] || 0) + 1;
+    return acc;
+  }, {});
+
+const buildDryRunPrisma = () => ({
+  trainingDataset: {
+    findFirst: async () => null,
+    create: async () => null,
+    update: async () => null,
+  },
+  trainingExample: {
+    findMany: async () => [],
+    createMany: async () => ({ count: 0 }),
+    count: async () => 0,
+  },
+});
+
+export async function seedCuratedDataset(prisma = new PrismaClient(), options = {}) {
+  const version = options.version || LATEST_STABLE_CURATED_VERSION;
+  const definition = getCuratedDatasetDefinition(version);
+  const datasetName = options.datasetName?.trim() || definition.name;
+  const limit = Number.isFinite(options.limit) ? Number(options.limit) : 0;
+  const dryRun = Boolean(options.dryRun);
+
+  let examples = definition.buildExamples();
+  if (limit > 0) {
+    examples = examples.slice(0, limit);
+  }
+
+  const uniquePromptSet = new Set();
+  const normalizedExamples = examples.filter((example) => {
+    const prompt = normalizePrompt(example.inputMessages);
+    if (!prompt || uniquePromptSet.has(prompt)) {
+      return false;
+    }
+    uniquePromptSet.add(prompt);
+    return true;
+  });
+
   const dataset =
-    (await prisma.trainingDataset.findFirst({ where: { name: CURATED_DATASET_NAME } })) ??
+    (await prisma.trainingDataset.findFirst({ where: { name: datasetName } })) ??
     (dryRun
-      ? { id: 'dry-run-id', name: CURATED_DATASET_NAME, description: CURATED_DATASET_DESCRIPTION, status: 'active' }
+      ? {
+          id: `dry-run-${definition.version}`,
+          name: datasetName,
+          description: definition.description,
+          status: 'active',
+          version: definition.numericVersion,
+        }
       : await prisma.trainingDataset.create({
-          data: { name: CURATED_DATASET_NAME, description: CURATED_DATASET_DESCRIPTION, status: 'active' },
+          data: {
+            name: datasetName,
+            description: definition.description,
+            status: 'active',
+            version: definition.numericVersion,
+          },
         }));
 
-  // Update description/status if needed
-  if (!dryRun && (dataset.description !== CURATED_DATASET_DESCRIPTION || dataset.status !== 'active')) {
+  if (
+    !dryRun &&
+    (dataset.description !== definition.description ||
+      dataset.status !== 'active' ||
+      dataset.version !== definition.numericVersion)
+  ) {
     await prisma.trainingDataset.update({
       where: { id: dataset.id },
-      data: { description: CURATED_DATASET_DESCRIPTION, status: 'active' },
+      data: {
+        description: definition.description,
+        status: 'active',
+        version: definition.numericVersion,
+      },
     });
   }
 
-  // Find existing to avoid duplicates
-  const existing = dryRun
-    ? []
-    : await prisma.trainingExample.findMany({
-        where: { datasetId: dataset.id, sourceId: { in: examples.map((e) => e.sourceId) } },
-        select: { sourceId: true },
-      });
+  const existingExamples = await prisma.trainingExample.findMany({
+    where: { datasetId: dataset.id },
+    select: { sourceId: true, inputMessages: true },
+  });
 
-  const existingIds = new Set(existing.map((e) => e.sourceId).filter(Boolean));
-  const toCreate = examples.filter((e) => !existingIds.has(e.sourceId));
+  const existingSourceIds = new Set(existingExamples.map((item) => item.sourceId).filter(Boolean));
+  const existingPrompts = new Set(existingExamples.map((item) => normalizePrompt(item.inputMessages)).filter(Boolean));
 
-  // Insert missing examples
+  const toCreate = normalizedExamples.filter((example) => {
+    const prompt = normalizePrompt(example.inputMessages);
+    return !existingSourceIds.has(example.sourceId) && !existingPrompts.has(prompt);
+  });
+
   if (!dryRun && toCreate.length > 0) {
     await prisma.trainingExample.createMany({
-      data: toCreate.map((e) => ({
+      data: toCreate.map((example) => ({
         datasetId: dataset.id,
-        sourceType: e.sourceType,
-        sourceId: e.sourceId,
-        subject: e.subject,
-        topic: e.topic,
-        learningMode: e.learningMode,
-        userLevel: e.userLevel,
-        inputMessages: e.inputMessages,
-        idealResponse: e.idealResponse,
-        qualityScore: e.qualityScore,
-        status: e.status,
+        sourceType: example.sourceType,
+        sourceId: example.sourceId,
+        subject: example.subject,
+        topic: example.topic,
+        learningMode: example.learningMode,
+        userLevel: example.userLevel,
+        inputMessages: example.inputMessages,
+        idealResponse: example.idealResponse,
+        qualityScore: example.qualityScore,
+        status: example.status,
       })),
     });
   }
 
   const approvedCount = dryRun
-    ? examples.length
+    ? existingExamples.length + toCreate.length
     : await prisma.trainingExample.count({ where: { datasetId: dataset.id, status: 'approved' } });
+  const distribution = buildDistribution(normalizedExamples);
+  const skippedExamples = normalizedExamples.length - toCreate.length;
 
-  // Category distribution
-  const dist = getCategoryDistribution();
-
-  console.log(`${dryRun ? '[DRY RUN] ' : ''}Seed dataset: ${CURATED_DATASET_NAME}`);
+  console.log(`${dryRun ? '[DRY RUN] ' : ''}Seed dataset: ${datasetName}`);
+  console.log(`version: ${definition.version}`);
   console.log(`datasetId: ${dataset.id}`);
-  console.log(`totalExamples: ${examples.length}`);
-  console.log(`toInsert: ${toCreate.length}`);
-  console.log(`alreadyExist: ${existingIds.size}`);
+  console.log(`totalExamples: ${normalizedExamples.length}`);
+  console.log(`insertedExamples: ${toCreate.length}`);
+  console.log(`skippedExamples: ${skippedExamples}`);
   console.log(`approvedExamples: ${approvedCount}`);
   console.log('--- Category Distribution ---');
-  for (const [cat, count] of Object.entries(dist).sort()) {
-    console.log(`  ${cat}: ${count}`);
+  for (const [category, count] of Object.entries(distribution).sort(([left], [right]) => left.localeCompare(right))) {
+    console.log(`  ${category}: ${count}`);
   }
 
-  return { datasetId: dataset.id, totalExamples: examples.length, insertedExamples: toCreate.length, approvedExamples: approvedCount, dryRun };
+  return {
+    datasetId: dataset.id,
+    datasetName,
+    version: definition.version,
+    totalExamples: normalizedExamples.length,
+    insertedExamples: toCreate.length,
+    skippedExamples,
+    approvedExamples: approvedCount,
+    dryRun,
+  };
 }
 
 const runFromCli = async () => {
   const options = parseArgs(process.argv.slice(2));
-  const prisma = options.dryRun ? null : new PrismaClient();
+  const prisma = options.dryRun ? buildDryRunPrisma() : new PrismaClient();
+
   try {
-    if (options.dryRun) {
-      // Dry run with mock prisma
-      const mockPrisma = {
-        trainingDataset: { findFirst: async () => null, create: async () => null, update: async () => null },
-        trainingExample: { findMany: async () => [], createMany: async () => ({}), count: async () => 0 },
-      };
-      await seedCuratedDataset(mockPrisma, options);
-    } else {
-      await seedCuratedDataset(prisma, options);
+    await seedCuratedDataset(prisma, options);
+    if (!options.dryRun && '$disconnect' in prisma) {
       await prisma.$disconnect();
     }
     process.exit(0);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`Error: ${message}`);
-    if (prisma) await prisma.$disconnect();
+    if (!options.dryRun && '$disconnect' in prisma) {
+      await prisma.$disconnect();
+    }
     process.exit(1);
   }
 };

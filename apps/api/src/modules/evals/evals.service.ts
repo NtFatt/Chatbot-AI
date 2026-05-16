@@ -14,6 +14,7 @@ import type {
   EvalRunResult as PrismaEvalRunResult,
 } from '@prisma/client';
 
+import { env } from '../../config/env';
 import { ModelGatewayService } from '../../integrations/ai/model-gateway.service';
 import type { AIConversationMessage } from '../../integrations/ai/ai.types';
 import { InternalL3TutorModelService } from '../../integrations/ai/internal-l3-tutor-model.service';
@@ -41,6 +42,16 @@ const average = (scores: number[]) =>
   scores.length === 0
     ? 0
     : Number((scores.reduce((total, score) => total + score, 0) / scores.length).toFixed(2));
+
+const percentile = (values: number[], quantile: number) => {
+  if (values.length === 0) {
+    return 0;
+  }
+
+  const sorted = [...values].sort((left, right) => left - right);
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * quantile) - 1));
+  return sorted[index] ?? 0;
+};
 
 const mapEvalCase = (item: PrismaEvalCase): EvalCase => ({
   id: item.id,
@@ -368,7 +379,7 @@ export class EvalsService {
       modelVersionId = descriptor.modelVersionId ?? null;
     }
 
-    const results = await Promise.all(evalCases.map(async (evalCase) => {
+    const runEvalCase = async (evalCase: EvalCase) => {
       try {
         let output: string;
         let latencyMs = 0;
@@ -406,7 +417,10 @@ export class EvalsService {
             modelVersionId,
             systemPrompt: prompt.systemPrompt,
             messages: prompt.messages,
-            temperature: 0.2,
+            temperature: provider === 'local_lora' ? env.LOCAL_LORA_TEMPERATURE : 0.2,
+            topP: provider === 'local_lora' ? env.LOCAL_LORA_TOP_P : undefined,
+            maxNewTokens: provider === 'local_lora' ? env.LOCAL_LORA_MAX_NEW_TOKENS : undefined,
+            contextMaxChars: provider === 'local_lora' ? env.LOCAL_LORA_CONTEXT_MAX_CHARS : undefined,
           });
           output = response.text;
           latencyMs = response.latencyMs ?? 0;
@@ -433,7 +447,19 @@ export class EvalsService {
           failed: true,
         };
       }
-    }));
+    };
+
+    const results =
+      provider === 'local_lora'
+        ? await evalCases.reduce<Promise<Array<Awaited<ReturnType<typeof runEvalCase>>>>>(
+            async (promise, evalCase) => {
+              const items = await promise;
+              items.push(await runEvalCase(evalCase));
+              return items;
+            },
+            Promise.resolve([]),
+          )
+        : await Promise.all(evalCases.map((evalCase) => runEvalCase(evalCase)));
 
     const completedLatencies = results
       .map((result) => result.latencyMs)
@@ -444,11 +470,15 @@ export class EvalsService {
         : Math.round(
             completedLatencies.reduce((total, latency) => total + latency, 0) / completedLatencies.length,
           );
+    const p50LatencyMs = percentile(completedLatencies, 0.5);
+    const p95LatencyMs = percentile(completedLatencies, 0.95);
     const timeoutCount = results.filter((result) => /LOCAL_LORA_TIMEOUT/i.test(result.notes ?? '')).length;
     const errorCount = results.filter((result) => result.failed).length;
     const fallbackCount = 0;
     const benchmarkSummary = [
       `avgLatencyMs=${averageLatencyMs}`,
+      `p50LatencyMs=${p50LatencyMs}`,
+      `p95LatencyMs=${p95LatencyMs}`,
       `timeoutCount=${timeoutCount}`,
       `fallbackCount=${fallbackCount}`,
       `errorCount=${errorCount}`,

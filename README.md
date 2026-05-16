@@ -1,6 +1,6 @@
 # Chatbot AI — Vietnamese AI Study Assistant
 
-A production-minded fullstack AI learning workspace for Vietnamese students, featuring realtime chat, study artifacts, contextual learning support, AI provider diagnostics, an internal AI Level 3 learning engine, and a Low Level 4 Local LoRA runtime that has now been retrained and benchmarked on a curated 100-example Vietnamese tutor dataset.
+A production-minded fullstack AI learning workspace for Vietnamese students, featuring realtime chat, study artifacts, contextual learning support, AI provider diagnostics, an internal AI Level 3 learning engine, and a Low Level 4 Local LoRA runtime that has now been retrained and benchmarked on a curated 300-example Vietnamese tutor dataset.
 
 This is not a basic API-wrapper chatbot. The project includes a complete AI learning platform layer: dataset management, evaluation harness, model registry, fine-tune-ready adapters, internal tutor runtime, and local LoRA integration path.
 
@@ -34,8 +34,8 @@ This is not a basic API-wrapper chatbot. The project includes a complete AI lear
 | Evaluation harness | Complete |
 | Model registry | Complete |
 | Fine-tune-ready adapter layer | Complete |
-| Low Level 4 Local LoRA integration | Real v2 runtime validated on curated dev-safe tutor data |
-| Real trained LoRA adapter | Retrained locally with LoRA on v2, still not a full Level 4 or production-quality claim |
+| Low Level 4 Local LoRA integration | Real v3 runtime validated on curated dev-safe tutor data |
+| Real trained LoRA adapter | Retrained locally with LoRA on v3, still not a full Level 4 or production-quality claim |
 | Production deployment | Not finalized |
 
 ---
@@ -189,7 +189,7 @@ Approved TrainingExamples
 → active ModelVersion
 → ChatService
 
-This path is now validated with a real locally retrained LoRA adapter served through the backend Local LoRA provider. It is still not a full Level 4 claim because the current v2 adapter, while improved over v1, still lags the internal tutor on quality and averages high local inference latency.
+This path is now validated with a real locally retrained LoRA adapter served through the backend Local LoRA provider. It is still not a full Level 4 claim because the current v3 adapter only matched the historical v2 benchmark score (`0.21`) even though latency improved materially to about `7.5s` average in the Phase 8 benchmark.
 
 Tech Stack
 Frontend
@@ -378,8 +378,12 @@ Enable Local LoRA provider:
 
 LOCAL_LORA_ENABLED=true
 LOCAL_LORA_BASE_URL=http://localhost:8008
-LOCAL_LORA_MODEL=local-lora-tutor-v1
+LOCAL_LORA_MODEL=local-lora-tutor-v3
 LOCAL_LORA_TIMEOUT_MS=30000
+LOCAL_LORA_MAX_NEW_TOKENS=64
+LOCAL_LORA_TEMPERATURE=0.2
+LOCAL_LORA_TOP_P=0.9
+LOCAL_LORA_CONTEXT_MAX_CHARS=6000
 
 Start the mock/real local inference server:
 

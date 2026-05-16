@@ -3,104 +3,122 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const prisma = new PrismaClient();
+const CASE_PREFIX = 'Phase 8 - ';
 
-export const PHASE7_EVAL_CASES = [
+export const PHASE8_EVAL_CASES = [
   {
-    name: 'Phase 7 - Explain Concept - OOP Basics',
-    description: 'Short beginner-friendly explanation of OOP in Java.',
+    name: `${CASE_PREFIX}Explain Concept - Encapsulation`,
+    description: 'Short Vietnamese explanation of Java encapsulation.',
     category: 'explain_concept',
-    inputMessages: [{ role: 'user', content: 'Giải thích OOP trong Java bằng ví dụ ngắn.' }],
+    inputMessages: [{ role: 'user', content: 'Giải thích tính đóng gói trong OOP Java bằng ví dụ ngắn.' }],
     idealResponse:
-      'OOP là cách tổ chức chương trình quanh class và object. Ví dụ, class Dog có thuộc tính name và phương thức bark().',
-    scoringNotes: 'Reward concise concept explanation plus a simple Java-flavored example.',
+      'Đóng gói là giấu dữ liệu nội bộ và chỉ cho truy cập qua phương thức phù hợp. Ví dụ, balance là private và chỉ đổi qua deposit().',
+    scoringNotes: 'Reward concise definition plus a concrete Java example.',
   },
   {
-    name: 'Phase 7 - Give Example - Java Interface',
-    description: 'Ask for one compact example of an interface in Java.',
+    name: `${CASE_PREFIX}Give Example - Python Dictionary`,
+    description: 'One compact dictionary example with explanation.',
     category: 'give_example',
-    inputMessages: [{ role: 'user', content: 'Cho mình một ví dụ ngắn về interface trong Java.' }],
+    inputMessages: [{ role: 'user', content: 'Cho mình một ví dụ ngắn về dictionary trong Python.' }],
     idealResponse:
-      'Ví dụ: interface Printable { void print(); } và class Report implements Printable { public void print() { System.out.println("In báo cáo"); } }.',
-    scoringNotes: 'Reward a concrete Java example instead of a pure definition.',
+      'Ví dụ: student = {"name": "Lan", "age": 19}. Dictionary lưu theo key-value nên có thể lấy student["name"] để đọc tên.',
+    scoringNotes: 'Reward a short example and why it fits the concept.',
   },
   {
-    name: 'Phase 7 - Compare Concepts - Interface vs Abstract Class',
-    description: 'Compare two related Java concepts briefly and clearly.',
+    name: `${CASE_PREFIX}Compare Concepts - GET vs POST`,
+    description: 'Compare two HTTP methods briefly.',
     category: 'compare_concepts',
-    inputMessages: [{ role: 'user', content: 'So sánh interface và abstract class trong Java thật ngắn.' }],
+    inputMessages: [{ role: 'user', content: 'So sánh GET và POST thật ngắn, dễ hiểu.' }],
     idealResponse:
-      'Interface mô tả hợp đồng hành vi; abstract class là lớp cơ sở có thể chứa cả logic chung và trạng thái. Interface linh hoạt hơn cho nhiều kiểu cài đặt.',
+      'GET chủ yếu để lấy dữ liệu, còn POST chủ yếu để gửi dữ liệu tạo hoặc xử lý tài nguyên. GET thường lộ tham số trên URL, POST đặt dữ liệu trong body.',
     scoringNotes: 'Reward direct comparison language and at least one concrete difference.',
   },
   {
-    name: 'Phase 7 - Correct Student Answer - Inheritance',
-    description: 'Correct a short student misconception about inheritance.',
+    name: `${CASE_PREFIX}Correct Student Answer - Binary Search`,
+    description: 'Correct a misconception about binary search.',
     category: 'correct_student_answer',
     inputMessages: [
       {
         role: 'user',
-        content:
-          'Một bạn nói: "Kế thừa trong Java nghĩa là object con sao chép toàn bộ code của object cha." Hãy sửa ngắn gọn.',
+        content: 'Một bạn nói: "Mảng chưa sắp xếp vẫn tìm kiếm nhị phân được nếu chọn điểm giữa hợp lý." Hãy sửa ngắn gọn.',
       },
     ],
     idealResponse:
-      'Câu đó chưa đúng. Kế thừa là class con nhận lại thuộc tính và phương thức từ class cha, không phải object con sao chép toàn bộ code.',
-    scoringNotes: 'Reward explicit correction and the right class-based explanation.',
+      'Câu đó chưa đúng. Tìm kiếm nhị phân cần dữ liệu đã sắp xếp, nếu chưa có thứ tự thì việc bỏ nửa mảng sẽ không còn đáng tin.',
+    scoringNotes: 'Reward explicit correction and the sorted-data requirement.',
   },
   {
-    name: 'Phase 7 - Generate Quiz - Constructors',
-    description: 'Produce a short multiple-choice quiz about constructors.',
+    name: `${CASE_PREFIX}Generate Quiz - SQL JOIN`,
+    description: 'Create a very short multiple-choice quiz.',
     category: 'generate_quiz',
-    inputMessages: [{ role: 'user', content: 'Tạo 2 câu quiz trắc nghiệm ngắn về constructor trong Java.' }],
+    inputMessages: [{ role: 'user', content: 'Tạo 2 câu quiz trắc nghiệm ngắn về JOIN trong SQL.' }],
     idealResponse:
-      'Câu 1 hỏi constructor dùng để làm gì, câu 2 hỏi khi nào constructor mặc định xuất hiện; mỗi câu có 4 lựa chọn và đáp án.',
-    scoringNotes: 'Reward quiz structure with answer choices and an answer key.',
+      'Quiz nên có 2 câu, mỗi câu có 4 lựa chọn A-D và đáp án, tập trung vào ý nghĩa của JOIN và khác biệt giữa INNER JOIN với LEFT JOIN.',
+    scoringNotes: 'Reward quiz structure, answer choices, and an answer key.',
   },
   {
-    name: 'Phase 7 - Generate Flashcards - Encapsulation',
-    description: 'Create quick flashcards for a Java OOP concept.',
+    name: `${CASE_PREFIX}Generate Flashcards - Stack`,
+    description: 'Create 3 short study flashcards.',
     category: 'generate_flashcards',
-    inputMessages: [{ role: 'user', content: 'Tạo 3 flashcard ngắn để học tính đóng gói trong Java.' }],
+    inputMessages: [{ role: 'user', content: 'Tạo 3 flashcard ngắn để học cấu trúc stack.' }],
     idealResponse:
-      'Flashcard should pair a short term or question with a concise answer about encapsulation, private fields, and getters/setters.',
-    scoringNotes: 'Reward clear flashcard formatting with compact term/definition pairs.',
+      'Flashcards nên nhắc đến LIFO, ví dụ undo, và lỗi dễ nhầm giữa stack với queue.',
+    scoringNotes: 'Reward clear flashcard formatting with short question-answer pairs.',
   },
   {
-    name: 'Phase 7 - Summarize Lesson - Collections',
-    description: 'Summarize a short Java lesson into bullet points.',
+    name: `${CASE_PREFIX}Summarize Lesson - Big O`,
+    description: 'Summarize a short algorithm lesson into a few bullets.',
     category: 'summarize_lesson',
-    inputMessages: [
-      {
-        role: 'user',
-        content:
-          'Tóm tắt thật ngắn bài học về List, Set và Map trong Java thành vài ý chính.',
-      },
-    ],
+    inputMessages: [{ role: 'user', content: 'Tóm tắt thật ngắn bài Big O thành vài ý chính.' }],
     idealResponse:
-      'List giữ thứ tự và cho phép trùng; Set không cho phần tử trùng; Map lưu dữ liệu theo cặp key-value.',
-    scoringNotes: 'Reward bullet-style lesson summary with core distinctions.',
+      'Big O mô tả tốc độ tăng trưởng khi dữ liệu lớn dần. O(log n) thường mở rộng tốt hơn O(n), và Big O không thay thế hoàn toàn thời gian đo thực tế.',
+    scoringNotes: 'Reward compact summary bullets and growth-rate framing.',
   },
   {
-    name: 'Phase 7 - Study Plan - Java OOP Review',
-    description: 'Generate a short study plan for revising Java OOP.',
+    name: `${CASE_PREFIX}Study Plan - Overfitting`,
+    description: 'Three-day plan for reviewing one ML concept.',
     category: 'study_plan',
+    inputMessages: [{ role: 'user', content: 'Lập kế hoạch học 3 ngày để ôn khái niệm overfitting.' }],
+    idealResponse:
+      'Ngày 1 hiểu định nghĩa và dấu hiệu train/validation lệch nhau. Ngày 2 xem ví dụ overfitting và regularization. Ngày 3 tự đọc learning curve và trả lời câu hỏi kiểm tra.',
+    scoringNotes: 'Reward day-by-day sequencing with realistic review steps.',
+  },
+  {
+    name: `${CASE_PREFIX}Source Grounded - Provided Snippet`,
+    description: 'Answer only from a supplied snippet.',
+    category: 'source_grounded_answer',
     inputMessages: [
       {
         role: 'user',
         content:
-          'Lập kế hoạch học 3 ngày để ôn OOP Java cho người mới, mỗi ngày vài ý thật ngắn.',
+          'Chỉ dựa vào đoạn sau để trả lời.\nĐoạn nguồn: "Indexes speed up data retrieval but add overhead to writes."\nCâu hỏi: Theo đoạn trên, trade-off chính của index là gì?',
       },
     ],
     idealResponse:
-      'Day 1 review class/object and encapsulation, Day 2 inheritance and polymorphism, Day 3 interface, abstract class, and practice quiz.',
-    scoringNotes: 'Reward day-by-day structure with realistic sequencing.',
+      'Theo đoạn đã cho, index giúp đọc dữ liệu nhanh hơn nhưng làm thao tác ghi tốn thêm chi phí.',
+    scoringNotes: 'Reward staying within the given snippet and naming both sides of the trade-off.',
+  },
+  {
+    name: `${CASE_PREFIX}Fallback Transparency - Missing Context`,
+    description: 'The assistant should refuse to guess and ask for the missing artifact.',
+    category: 'fallback_transparency',
+    inputMessages: [
+      {
+        role: 'user',
+        content:
+          'Mình chưa gửi code class Java nhưng bạn hãy kết luận ngay lỗi đóng gói nằm ở đâu.',
+      },
+    ],
+    idealResponse:
+      'Mình chưa thể kết luận chính xác vì bạn chưa gửi code. Bạn hãy gửi class hoặc phần thuộc tính/phương thức liên quan, rồi mình sẽ chỉ rõ lỗi đóng gói.',
+    scoringNotes: 'Reward honest limitation handling and a concrete next step.',
   },
 ];
 
 export async function seedPhase7BenchmarkEvalCases(client = prisma) {
   const results = [];
 
-  for (const evalCase of PHASE7_EVAL_CASES) {
+  for (const evalCase of PHASE8_EVAL_CASES) {
     const existing = await client.evalCase.findFirst({
       where: { name: evalCase.name },
       orderBy: { updatedAt: 'desc' },
@@ -136,7 +154,7 @@ export async function seedPhase7BenchmarkEvalCases(client = prisma) {
     });
   }
 
-  console.log(JSON.stringify({ total: results.length, items: results }, null, 2));
+  console.log(JSON.stringify({ total: results.length, prefix: CASE_PREFIX, items: results }, null, 2));
   return results;
 }
 

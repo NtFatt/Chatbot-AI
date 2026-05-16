@@ -36,6 +36,9 @@ export class ModelGatewayService {
     model?: string;
     modelVersionId?: string | null;
     temperature?: number;
+    topP?: number;
+    maxNewTokens?: number;
+    contextMaxChars?: number;
     timeoutMs?: number;
     userId?: string;
     sessionId?: string | null;
@@ -83,6 +86,9 @@ export class ModelGatewayService {
         messages: input.messages,
         timeoutMs: input.timeoutMs ?? providerState.timeoutMs,
         temperature: input.temperature,
+        topP: input.topP,
+        maxNewTokens: input.maxNewTokens,
+        contextMaxChars: input.contextMaxChars,
       });
 
       this.providerHealthService.recordSuccess(input.provider);

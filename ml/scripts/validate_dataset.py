@@ -4,6 +4,25 @@ import sys
 from typing import Iterable, List
 
 
+def build_prompt_key(messages: object) -> str:
+    if not isinstance(messages, list):
+        return ""
+
+    parts: List[str] = []
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        role = message.get("role")
+        content = message.get("content")
+        if role == "assistant" or not isinstance(content, str):
+            continue
+        normalized = " ".join(content.strip().split())
+        if normalized:
+            parts.append(f"{role}:{normalized.lower()}")
+
+    return "\n".join(parts)
+
+
 def validate_messages(messages: object, line_number: int) -> List[str]:
     errors: List[str] = []
 
@@ -40,6 +59,7 @@ def validate_dataset_lines(lines: Iterable[str]) -> List[str]:
         return ["Error: Dataset is empty"]
 
     errors: List[str] = []
+    seen_prompt_keys = set()
     for index, line in enumerate(normalized_lines, start=1):
         stripped = line.strip()
         if not stripped:
@@ -56,7 +76,14 @@ def validate_dataset_lines(lines: Iterable[str]) -> List[str]:
             errors.append(f"Line {index}: Missing 'messages' key")
             continue
 
-        errors.extend(validate_messages(data["messages"], index))
+        messages = data["messages"]
+        errors.extend(validate_messages(messages, index))
+        prompt_key = build_prompt_key(messages)
+        if prompt_key:
+            if prompt_key in seen_prompt_keys:
+                errors.append(f"Line {index}: Duplicate prompt content")
+            else:
+                seen_prompt_keys.add(prompt_key)
 
     return errors
 

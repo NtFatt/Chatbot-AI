@@ -26,6 +26,61 @@ interface LocalLoraCompletionResponse {
   usage?: LocalLoraUsage;
 }
 
+const clampWithEllipsis = (value: string, maxChars: number) => {
+  if (value.length <= maxChars) {
+    return value;
+  }
+
+  if (maxChars <= 32) {
+    return value.slice(0, maxChars);
+  }
+
+  const head = Math.ceil(maxChars * 0.55);
+  const tail = Math.max(0, maxChars - head - 7);
+  return `${value.slice(0, head)}\n...\n${value.slice(value.length - tail)}`;
+};
+
+const trimMessagesForLocalLora = (
+  systemPrompt: string | undefined,
+  messages: AIProviderRequest['messages'],
+  contextMaxChars: number,
+) => {
+  const trimmed: LocalLoraMessage[] = [];
+  let remaining = contextMaxChars;
+
+  if (systemPrompt) {
+    const normalizedSystemPrompt = systemPrompt.trim();
+    if (normalizedSystemPrompt) {
+      const systemBudget = Math.min(remaining, Math.min(1500, Math.max(200, Math.floor(contextMaxChars * 0.3))));
+      const cappedSystemPrompt = clampWithEllipsis(normalizedSystemPrompt, systemBudget);
+      trimmed.push({ role: 'system', content: cappedSystemPrompt });
+      remaining = Math.max(0, remaining - cappedSystemPrompt.length);
+    }
+  }
+
+  const reversedMessages = [...messages].reverse();
+  const keptMessages: LocalLoraMessage[] = [];
+  for (const message of reversedMessages) {
+    if (remaining <= 0) {
+      break;
+    }
+
+    const normalizedContent = message.content.trim();
+    if (!normalizedContent) {
+      continue;
+    }
+
+    const cappedContent = clampWithEllipsis(normalizedContent, Math.min(remaining, normalizedContent.length));
+    keptMessages.push({
+      role: message.role,
+      content: cappedContent,
+    });
+    remaining = Math.max(0, remaining - cappedContent.length);
+  }
+
+  return [...trimmed, ...keptMessages.reverse()];
+};
+
 export class LocalLoraProvider implements AIProvider {
   readonly key = 'local_lora';
 
@@ -49,16 +104,18 @@ export class LocalLoraProvider implements AIProvider {
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     try {
-      const formattedMessages: LocalLoraMessage[] = [];
-      if (request.systemPrompt) {
-        formattedMessages.push({ role: 'system', content: request.systemPrompt });
-      }
-      formattedMessages.push(
-        ...request.messages.map((message) => ({ role: message.role, content: message.content })),
+      const formattedMessages = trimMessagesForLocalLora(
+        request.systemPrompt,
+        request.messages,
+        request.contextMaxChars ?? env.LOCAL_LORA_CONTEXT_MAX_CHARS,
       );
 
       const controller = new AbortController();
       timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+      const maxNewTokens = request.maxNewTokens ?? env.LOCAL_LORA_MAX_NEW_TOKENS;
+      const temperature = request.temperature ?? env.LOCAL_LORA_TEMPERATURE;
+      const topP = request.topP ?? env.LOCAL_LORA_TOP_P;
 
       const response = await fetch(`${env.LOCAL_LORA_BASE_URL}/v1/chat/completions`, {
         method: 'POST',
@@ -68,9 +125,9 @@ export class LocalLoraProvider implements AIProvider {
         body: JSON.stringify({
           model: request.model || env.LOCAL_LORA_MODEL,
           messages: formattedMessages,
-          temperature: request.temperature ?? env.LOCAL_LORA_TEMPERATURE,
-          max_tokens: env.LOCAL_LORA_MAX_NEW_TOKENS,
-          top_p: env.LOCAL_LORA_TOP_P,
+          temperature,
+          max_new_tokens: maxNewTokens,
+          top_p: topP,
         }),
         signal: controller.signal,
       });

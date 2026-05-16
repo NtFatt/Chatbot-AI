@@ -116,4 +116,30 @@ describe('export-l4-dataset', () => {
 
     expect(result.exportedTrainCount).toBe(20);
   });
+
+  it('drops duplicate prompt records deterministically before export', () => {
+    const records = collectApprovedRecords([
+      {
+        id: 'example-2',
+        status: 'APPROVED',
+        inputMessages: [{ role: 'user', content: 'Giải thích tính đóng gói' }],
+        idealResponse: 'Bản trả lời thứ hai.',
+      },
+      {
+        id: 'example-1',
+        status: 'APPROVED',
+        inputMessages: [{ role: 'user', content: 'Giải thích tính đóng gói' }],
+        idealResponse: 'Bản trả lời thứ nhất.',
+      },
+      {
+        id: 'example-3',
+        status: 'APPROVED',
+        inputMessages: [{ role: 'user', content: 'Giải thích đa hình' }],
+        idealResponse: 'Bản trả lời khác.',
+      },
+    ]);
+
+    expect(records).toHaveLength(2);
+    expect(JSON.stringify(records[0])).toContain('Bản trả lời thứ nhất');
+  });
 });

@@ -187,4 +187,29 @@ describe('register-local-lora-model script', () => {
   it('derives the display name from the fine-tuned model name', () => {
     expect(deriveLocalLoraDisplayName('local-lora-tutor-v2')).toBe('Local LoRA Tutor v2');
   });
+
+  it('parses v3 registration flags without special-case logic', () => {
+    const options = parseCliArgs([
+      '--real',
+      '--model',
+      'local-lora-tutor-v3',
+      '--adapter',
+      'ml/adapters/local-lora-tutor-v3',
+      '--dataset-name',
+      'DEV Curated L4 Tutor v3',
+      '--dataset-id',
+      'dataset-v3',
+      '--training-example-count',
+      '270',
+      '--validation-example-count',
+      '30',
+    ]);
+
+    expect(options.model).toBe('local-lora-tutor-v3');
+    expect(options.adapterPath).toBe('ml/adapters/local-lora-tutor-v3');
+    expect(options.datasetName).toBe('DEV Curated L4 Tutor v3');
+    expect(options.datasetId).toBe('dataset-v3');
+    expect(options.trainingExampleCount).toBe(270);
+    expect(options.validationExampleCount).toBe(30);
+  });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { env } from '../src/config/env';
 import { EvalsService } from '../src/modules/evals/evals.service';
 
 describe('EvalsService', () => {
@@ -180,10 +181,121 @@ describe('EvalsService', () => {
         provider: 'local_lora',
         model: 'local-lora-tutor-v1',
         modelVersionId: 'mv-local',
+        maxNewTokens: env.LOCAL_LORA_MAX_NEW_TOKENS,
+        contextMaxChars: env.LOCAL_LORA_CONTEXT_MAX_CHARS,
       }),
     );
     expect(run.provider).toBe('local_lora');
     expect(run.modelVersionId).toBe('mv-local');
+  });
+
+  it('records latency summary notes with p50 and p95 values', async () => {
+    const repository = {
+      findCasesByIds: vi.fn().mockResolvedValue([
+        {
+          id: 'case-summary-1',
+          name: 'Case 1',
+          description: 'Desc',
+          category: 'explain_concept',
+          inputMessages: [{ role: 'user', content: 'Giải thích OOP.' }],
+          idealResponse: 'OOP là gì đó.',
+          scoringNotes: null,
+          createdAt: new Date('2026-05-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-05-01T00:00:00.000Z'),
+        },
+        {
+          id: 'case-summary-2',
+          name: 'Case 2',
+          description: 'Desc',
+          category: 'explain_concept',
+          inputMessages: [{ role: 'user', content: 'Giải thích lớp.' }],
+          idealResponse: 'Lớp là gì đó.',
+          scoringNotes: null,
+          createdAt: new Date('2026-05-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-05-01T00:00:00.000Z'),
+        },
+      ]),
+      createRun: vi.fn().mockImplementation(async (input) => ({
+        id: 'run-summary',
+        provider: input.provider,
+        model: input.model,
+        modelVersionId: input.modelVersionId ?? null,
+        averageScore: input.averageScore,
+        notes: input.notes ?? null,
+        createdAt: new Date('2026-05-02T00:00:00.000Z'),
+        updatedAt: new Date('2026-05-02T00:00:00.000Z'),
+        results: input.results.map((result: {
+          evalCaseId: string;
+          output: string;
+          score: number;
+          notes?: string | null;
+        }, index: number) => ({
+          id: `result-${index}`,
+          runId: 'run-summary',
+          evalCaseId: result.evalCaseId,
+          output: result.output,
+          score: result.score,
+          notes: result.notes ?? null,
+          createdAt: new Date('2026-05-02T00:00:00.000Z'),
+          evalCase: {
+            id: result.evalCaseId,
+            name: `Case ${index + 1}`,
+            description: 'Desc',
+            category: 'explain_concept',
+            inputMessages: [],
+            idealResponse: 'Ref',
+            scoringNotes: null,
+            createdAt: new Date('2026-05-01T00:00:00.000Z'),
+            updatedAt: new Date('2026-05-01T00:00:00.000Z'),
+          },
+        })),
+      })),
+    };
+    const modelGateway = {
+      generateSingle: vi
+        .fn()
+        .mockResolvedValueOnce({
+          provider: 'local_lora',
+          model: 'local-lora-tutor-v3',
+          modelVersionId: 'mv-local-v3',
+          text: 'Trả lời 1',
+          finishReason: 'stop',
+          latencyMs: 120,
+        })
+        .mockResolvedValueOnce({
+          provider: 'local_lora',
+          model: 'local-lora-tutor-v3',
+          modelVersionId: 'mv-local-v3',
+          text: 'Trả lời 2',
+          finishReason: 'stop',
+          latencyMs: 420,
+        }),
+    };
+
+    const service = new EvalsService(
+      repository as never,
+      {} as never,
+      {
+        listActiveVersions: vi.fn().mockResolvedValue([
+          {
+            id: 'mv-local-v3',
+            provider: 'local_lora',
+            baseModel: 'HuggingFaceTB/SmolLM2-135M-Instruct',
+            fineTunedModel: 'local-lora-tutor-v3',
+          },
+        ]),
+      } as never,
+      modelGateway as never,
+    );
+
+    const run = await service.createRun({
+      provider: 'local_lora',
+      evalCaseIds: ['case-summary-1', 'case-summary-2'],
+    });
+
+    expect(run.notes).toContain('avgLatencyMs=270');
+    expect(run.notes).toContain('p50LatencyMs=120');
+    expect(run.notes).toContain('p95LatencyMs=420');
   });
 
   it('benchmarks the internal_l3_tutor path without the external model gateway', async () => {

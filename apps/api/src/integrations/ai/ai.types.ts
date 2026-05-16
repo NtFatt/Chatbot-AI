@@ -12,6 +12,9 @@ export interface AIProviderRequest {
   messages: AIConversationMessage[];
   timeoutMs: number;
   temperature?: number;
+  topP?: number;
+  maxNewTokens?: number;
+  contextMaxChars?: number;
   structuredOutput?: {
     name: string;
     description?: string;

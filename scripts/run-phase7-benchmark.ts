@@ -1,49 +1,38 @@
 import { env } from '../apps/api/src/config/env';
 import { prisma } from '../apps/api/src/config/prisma';
 import { createApp } from '../apps/api/src/app';
-import type { EvalRun } from '../packages/shared/src/types/evals';
+import {
+  HISTORICAL_COMPARISON,
+  parseArgs,
+  parseRunSummary,
+  summarizePerCategory,
+} from './run-phase7-benchmark.helpers';
 
-const CASE_PREFIX = 'Phase 7 - ';
-
-const parseRunSummary = (notes: string | null) => {
-  const summary = {
-    avgLatencyMs: 0,
-    timeoutCount: 0,
-    fallbackCount: 0,
-    errorCount: 0,
-  };
-
-  const matches = notes?.match(/avgLatencyMs=(\d+); timeoutCount=(\d+); fallbackCount=(\d+); errorCount=(\d+)/i);
-  if (!matches) {
-    return summary;
+const resolveCasePrefix = async (preferredPrefix?: string) => {
+  if (preferredPrefix) {
+    return preferredPrefix;
   }
 
-  return {
-    avgLatencyMs: Number(matches[1] ?? 0),
-    timeoutCount: Number(matches[2] ?? 0),
-    fallbackCount: Number(matches[3] ?? 0),
-    errorCount: Number(matches[4] ?? 0),
-  };
-};
-
-const summarizePerCategory = (run: EvalRun) => {
-  const buckets = new Map<string, number[]>();
-
-  for (const result of run.results) {
-    const values = buckets.get(result.category) ?? [];
-    values.push(result.score);
-    buckets.set(result.category, values);
+  const prefixes = ['Phase 8 - ', 'Phase 7 - '];
+  for (const prefix of prefixes) {
+    const count = await prisma.evalCase.count({
+      where: {
+        name: {
+          startsWith: prefix,
+        },
+      },
+    });
+    if (count > 0) {
+      return prefix;
+    }
   }
 
-  return Object.fromEntries(
-    Array.from(buckets.entries()).map(([category, scores]) => [
-      category,
-      Number((scores.reduce((total, score) => total + score, 0) / scores.length).toFixed(2)),
-    ]),
-  );
+  return 'Phase 8 - ';
 };
 
 async function main() {
+  const options = parseArgs(process.argv.slice(2));
+  const casePrefix = await resolveCasePrefix(options.casePrefix);
   const { services } = createApp();
   await prisma.$connect();
 
@@ -51,14 +40,14 @@ async function main() {
     const evalCases = await prisma.evalCase.findMany({
       where: {
         name: {
-          startsWith: CASE_PREFIX,
+          startsWith: casePrefix,
         },
       },
       orderBy: [{ name: 'asc' }],
     });
 
     if (evalCases.length === 0) {
-      throw new Error(`No eval cases found with prefix "${CASE_PREFIX}"`);
+      throw new Error(`No eval cases found with prefix "${casePrefix}"`);
     }
 
     const evalCaseIds = evalCases.map((item) => item.id);
@@ -69,7 +58,7 @@ async function main() {
         input: {
           provider: 'internal_l3_tutor' as const,
           evalCaseIds,
-          notes: 'Phase 7 benchmark',
+          notes: `${casePrefix.trim()} benchmark`,
         },
       },
       {
@@ -78,7 +67,17 @@ async function main() {
         input: {
           provider: 'local_lora' as const,
           evalCaseIds,
-          notes: 'Phase 7 benchmark',
+          notes: `${casePrefix.trim()} benchmark`,
+        },
+      },
+      {
+        label: 'OPENAI',
+        enabled: env.OPENAI_ENABLED && Boolean(env.OPENAI_API_KEY),
+        input: {
+          provider: 'OPENAI' as const,
+          model: env.OPENAI_MODEL,
+          evalCaseIds,
+          notes: `${casePrefix.trim()} benchmark`,
         },
       },
       {
@@ -88,7 +87,7 @@ async function main() {
           provider: 'GEMINI' as const,
           model: env.GEMINI_MODEL,
           evalCaseIds,
-          notes: 'Phase 7 benchmark',
+          notes: `${casePrefix.trim()} benchmark`,
         },
       },
     ];
@@ -96,24 +95,41 @@ async function main() {
     const runs = [];
     for (const target of targets.filter((item) => item.enabled)) {
       const run = await services.evalsService.createRun(target.input);
+      const summary = parseRunSummary(run.notes);
       runs.push({
         target: target.label,
         evalRunId: run.id,
+        model: run.model,
         averageScore: run.averageScore,
-        averageLatencyMs: parseRunSummary(run.notes).avgLatencyMs,
-        timeoutCount: parseRunSummary(run.notes).timeoutCount,
-        fallbackCount: parseRunSummary(run.notes).fallbackCount,
-        errorCount: parseRunSummary(run.notes).errorCount,
         perCategoryScore: summarizePerCategory(run),
+        averageLatencyMs: summary.avgLatencyMs,
+        p50LatencyMs: summary.p50LatencyMs,
+        p95LatencyMs: summary.p95LatencyMs,
+        timeoutCount: summary.timeoutCount,
+        fallbackCount: summary.fallbackCount,
+        errorCount: summary.errorCount,
         notes: run.notes,
       });
     }
 
+    const currentLocalLoraRun = runs.find((run) => run.target === 'local_lora');
+    const internalRun = runs.find((run) => run.target === 'internal_l3_tutor');
+
     console.log(
       JSON.stringify(
         {
+          evalCasePrefix: casePrefix,
           evalCaseCount: evalCases.length,
           evalCaseIds,
+          historicalComparison: {
+            ...HISTORICAL_COMPARISON,
+            internalL3TutorCurrentAverageScore: internalRun?.averageScore ?? null,
+            localLoraCurrentAverageScore: currentLocalLoraRun?.averageScore ?? null,
+            localLoraDeltaVsV2:
+              currentLocalLoraRun?.averageScore == null
+                ? null
+                : Number((currentLocalLoraRun.averageScore - HISTORICAL_COMPARISON.localLoraV2AverageScore).toFixed(2)),
+          },
           runs,
         },
         null,

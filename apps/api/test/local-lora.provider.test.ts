@@ -21,6 +21,7 @@ describe('LocalLoraProvider', () => {
   const originalMaxNewTokens = env.LOCAL_LORA_MAX_NEW_TOKENS;
   const originalTemperature = env.LOCAL_LORA_TEMPERATURE;
   const originalTopP = env.LOCAL_LORA_TOP_P;
+  const originalContextMaxChars = env.LOCAL_LORA_CONTEXT_MAX_CHARS;
 
   beforeEach(() => {
     env.LOCAL_LORA_ENABLED = true;
@@ -30,6 +31,7 @@ describe('LocalLoraProvider', () => {
     env.LOCAL_LORA_MAX_NEW_TOKENS = 80;
     env.LOCAL_LORA_TEMPERATURE = 0.2;
     env.LOCAL_LORA_TOP_P = 0.9;
+    env.LOCAL_LORA_CONTEXT_MAX_CHARS = 6000;
   });
 
   afterEach(() => {
@@ -40,6 +42,7 @@ describe('LocalLoraProvider', () => {
     env.LOCAL_LORA_MAX_NEW_TOKENS = originalMaxNewTokens;
     env.LOCAL_LORA_TEMPERATURE = originalTemperature;
     env.LOCAL_LORA_TOP_P = originalTopP;
+    env.LOCAL_LORA_CONTEXT_MAX_CHARS = originalContextMaxChars;
     vi.unstubAllGlobals();
     vi.useRealTimers();
   });
@@ -87,7 +90,7 @@ describe('LocalLoraProvider', () => {
         { role: 'user', content: 'Giải thích OOP trong Java' },
       ],
       temperature: 0.2,
-      max_tokens: 80,
+      max_new_tokens: 80,
       top_p: 0.9,
     });
     expect(JSON.stringify(init)).not.toContain('Authorization');
@@ -205,9 +208,38 @@ describe('LocalLoraProvider', () => {
     expect(JSON.parse(String(init?.body))).toEqual(
       expect.objectContaining({
         temperature: 0.2,
-        max_tokens: 80,
+        max_new_tokens: 80,
         top_p: 0.9,
       }),
     );
+  });
+
+  it('trims oversized context before sending it to the local server', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: 'Đã nhận prompt đã cắt gọn.' }, finish_reason: 'stop' }],
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const provider = new LocalLoraProvider();
+    await provider.generate(
+      createRequest({
+        systemPrompt: 'S'.repeat(500),
+        messages: [{ role: 'user', content: 'Nội dung rất dài '.repeat(120) }],
+        contextMaxChars: 240,
+      }),
+    );
+
+    const [, init] = fetchMock.mock.calls[0]!;
+    const payload = JSON.parse(String(init?.body));
+    const combinedLength = payload.messages.reduce(
+      (total: number, message: { content: string }) => total + message.content.length,
+      0,
+    );
+
+    expect(combinedLength).toBeLessThanOrEqual(240);
+    expect(JSON.stringify(payload.messages)).toContain('...');
   });
 });

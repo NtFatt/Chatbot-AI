@@ -87,6 +87,8 @@ export function convertExampleToHfChatRecord(example) {
 }
 
 export function collectApprovedRecords(examples) {
+  const seenPromptKeys = new Set();
+
   return examples
     .filter((example) => {
       if (typeof example.status !== 'string') {
@@ -100,7 +102,21 @@ export function collectApprovedRecords(examples) {
     }))
     .filter((item) => item.record !== null)
     .sort((left, right) => left.id.localeCompare(right.id))
-    .map((item) => item.record);
+    .map((item) => item.record)
+    .filter((record) => {
+      const promptKey = record.messages
+        .filter((message) => message.role !== 'assistant')
+        .map((message) => `${message.role}:${normalizeText(message.content)}`)
+        .join('\n')
+        .toLowerCase();
+
+      if (!promptKey || seenPromptKeys.has(promptKey)) {
+        return false;
+      }
+
+      seenPromptKeys.add(promptKey);
+      return true;
+    });
 }
 
 export function enforceDatasetSize(exampleCount, allowSmall) {
