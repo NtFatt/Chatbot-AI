@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   LOCAL_LORA_RUNTIME_GROUP,
   activateLocalLoraVersion,
+  deriveLocalLoraDisplayName,
   buildRealLocalLoraVersionInput,
   buildLocalLoraVersionInput,
+  parseCliArgs,
 } from '../../../scripts/register-local-lora-model.mjs';
 
 describe('register-local-lora-model script', () => {
@@ -131,31 +133,58 @@ describe('register-local-lora-model script', () => {
 
   it('builds a real adapter registration payload from training metadata', () => {
     const input = buildRealLocalLoraVersionInput({
+      model: 'local-lora-tutor-v2',
       trainingMetadataPath: 'ml/adapters/local-lora-tutor-v1/training-metadata.json',
-      adapterPath: 'ml/adapters/local-lora-tutor-v1',
+      adapterPath: 'ml/adapters/local-lora-tutor-v2',
       datasetId: 'dataset-dev',
+      datasetName: 'DEV Curated L4 Tutor v2',
       trainingMetadata: {
         isMockTraining: false,
         baseModel: 'HuggingFaceTB/SmolLM2-135M-Instruct',
-        adapterName: 'local-lora-tutor-v1',
-        fineTunedModel: 'local-lora-tutor-v1',
-        trainingExampleCount: 24,
-        validationExampleCount: 2,
+        adapterName: 'local-lora-tutor-v2',
+        fineTunedModel: 'local-lora-tutor-v2',
+        trainingExampleCount: 90,
+        validationExampleCount: 10,
       },
     });
 
     expect(input.baseModel).toBe('HuggingFaceTB/SmolLM2-135M-Instruct');
-    expect(input.fineTunedModel).toBe('local-lora-tutor-v1');
+    expect(input.name).toBe('Local LoRA Tutor v2');
+    expect(input.fineTunedModel).toBe('local-lora-tutor-v2');
     expect(input.metadata).toEqual(
       expect.objectContaining({
         source: 'real-local-lora-training',
-        adapterPath: 'ml/adapters/local-lora-tutor-v1',
+        adapterPath: 'ml/adapters/local-lora-tutor-v2',
         trainingMetadataPath: 'ml/adapters/local-lora-tutor-v1/training-metadata.json',
+        datasetName: 'DEV Curated L4 Tutor v2',
         datasetId: 'dataset-dev',
-        datasetExampleCount: 24,
-        validationExampleCount: 2,
+        trainingExampleCount: 90,
+        validationExampleCount: 10,
         isMockTraining: false,
       }),
     );
+  });
+
+  it('parses model and adapter aliases for v2 registration', () => {
+    const options = parseCliArgs([
+      '--real',
+      '--model',
+      'local-lora-tutor-v2',
+      '--adapter',
+      'ml/adapters/local-lora-tutor-v2',
+      '--dataset-name',
+      'DEV Curated L4 Tutor v2',
+      '--training-example-count',
+      '90',
+    ]);
+
+    expect(options.model).toBe('local-lora-tutor-v2');
+    expect(options.adapterPath).toBe('ml/adapters/local-lora-tutor-v2');
+    expect(options.datasetName).toBe('DEV Curated L4 Tutor v2');
+    expect(options.trainingExampleCount).toBe(90);
+  });
+
+  it('derives the display name from the fine-tuned model name', () => {
+    expect(deriveLocalLoraDisplayName('local-lora-tutor-v2')).toBe('Local LoRA Tutor v2');
   });
 });

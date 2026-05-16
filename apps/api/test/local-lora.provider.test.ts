@@ -18,12 +18,18 @@ describe('LocalLoraProvider', () => {
   const originalBaseUrl = env.LOCAL_LORA_BASE_URL;
   const originalModel = env.LOCAL_LORA_MODEL;
   const originalTimeout = env.LOCAL_LORA_TIMEOUT_MS;
+  const originalMaxNewTokens = env.LOCAL_LORA_MAX_NEW_TOKENS;
+  const originalTemperature = env.LOCAL_LORA_TEMPERATURE;
+  const originalTopP = env.LOCAL_LORA_TOP_P;
 
   beforeEach(() => {
     env.LOCAL_LORA_ENABLED = true;
     env.LOCAL_LORA_BASE_URL = 'http://127.0.0.1:8008';
     env.LOCAL_LORA_MODEL = 'local-lora-tutor-v1';
     env.LOCAL_LORA_TIMEOUT_MS = 30_000;
+    env.LOCAL_LORA_MAX_NEW_TOKENS = 80;
+    env.LOCAL_LORA_TEMPERATURE = 0.2;
+    env.LOCAL_LORA_TOP_P = 0.9;
   });
 
   afterEach(() => {
@@ -31,6 +37,9 @@ describe('LocalLoraProvider', () => {
     env.LOCAL_LORA_BASE_URL = originalBaseUrl;
     env.LOCAL_LORA_MODEL = originalModel;
     env.LOCAL_LORA_TIMEOUT_MS = originalTimeout;
+    env.LOCAL_LORA_MAX_NEW_TOKENS = originalMaxNewTokens;
+    env.LOCAL_LORA_TEMPERATURE = originalTemperature;
+    env.LOCAL_LORA_TOP_P = originalTopP;
     vi.unstubAllGlobals();
     vi.useRealTimers();
   });
@@ -78,7 +87,8 @@ describe('LocalLoraProvider', () => {
         { role: 'user', content: 'Giải thích OOP trong Java' },
       ],
       temperature: 0.2,
-      max_tokens: 96,
+      max_tokens: 80,
+      top_p: 0.9,
     });
     expect(JSON.stringify(init)).not.toContain('Authorization');
     expect(response).toMatchObject({
@@ -177,5 +187,27 @@ describe('LocalLoraProvider', () => {
       message: '[local_lora] LOCAL_LORA_ENABLED is false',
     });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('uses env defaults when the caller does not pass temperature', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: 'Short answer' }, finish_reason: 'stop' }],
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const provider = new LocalLoraProvider();
+    await provider.generate(createRequest({ temperature: undefined }));
+
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(JSON.parse(String(init?.body))).toEqual(
+      expect.objectContaining({
+        temperature: 0.2,
+        max_tokens: 80,
+        top_p: 0.9,
+      }),
+    );
   });
 });

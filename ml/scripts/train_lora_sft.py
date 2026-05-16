@@ -9,7 +9,6 @@ Optional:
 """
 import argparse
 import json
-import os
 import subprocess
 import sys
 import time
@@ -18,14 +17,23 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train a Local LoRA adapter")
     parser.add_argument("--config", type=str, default="ml/configs/l4-low-sft.yaml")
     parser.add_argument("--dataset", type=str, required=True, help="Path to train JSONL dataset")
     parser.add_argument("--validation", type=str, help="Path to validation JSONL dataset")
-    parser.add_argument("--output-dir", type=str, help="Optional output directory override")
+    parser.add_argument("--output", "--output-dir", dest="output_dir", type=str, help="Optional output directory override")
+    parser.add_argument("--adapter-name", type=str, help="Optional adapter/model name override")
+    parser.add_argument("--dataset-name", type=str, help="Optional dataset display name for metadata")
+    parser.add_argument("--dataset-id", type=str, help="Optional dataset id for metadata")
+    parser.add_argument(
+        "--notes",
+        type=str,
+        default="LoRA SFT fine-tuning run. This is adapter training, not full model training from scratch.",
+        help="Optional metadata note for the training run",
+    )
     parser.add_argument("--mock", action="store_true", help="Write mock adapter metadata instead of real training")
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def read_config(config_path: str) -> Dict[str, Any]:
@@ -54,6 +62,22 @@ def resolve_git_commit() -> Optional[str]:
         return result.stdout.strip() or None
     except Exception:
         return None
+
+
+def resolve_output_dir(config: Dict[str, Any], args: argparse.Namespace) -> Path:
+    return Path(args.output_dir or config.get("output_dir", "ml/adapters/local-lora-tutor-v1"))
+
+
+def resolve_adapter_name(config: Dict[str, Any], output_dir: Path, explicit_adapter_name: Optional[str]) -> str:
+    if explicit_adapter_name:
+        return explicit_adapter_name
+
+    configured_name = config.get("adapter_name")
+    configured_output_dir = Path(str(config.get("output_dir", output_dir)))
+    if configured_name and configured_output_dir.name == output_dir.name:
+        return str(configured_name)
+
+    return output_dir.name
 
 
 def detect_device(torch_module: Any) -> Dict[str, Any]:
@@ -161,20 +185,27 @@ def build_training_metadata(
     base_model: str,
     dataset_path: str,
     validation_path: Optional[str],
+    dataset_name: Optional[str],
+    dataset_id: Optional[str],
     training_example_count: int,
     validation_example_count: int,
     is_mock_training: bool,
     device: str,
     cuda_available: bool,
+    started_at: str,
+    completed_at: str,
     training_duration_seconds: float,
     final_train_loss: Optional[float],
     final_eval_loss: Optional[float],
+    notes: Optional[str],
 ) -> Dict[str, Any]:
     return {
         "isMockTraining": is_mock_training,
         "baseModel": base_model,
         "adapterName": adapter_name,
         "fineTunedModel": adapter_name,
+        "datasetName": dataset_name,
+        "datasetId": dataset_id,
         "datasetPath": dataset_path,
         "validationPath": validation_path,
         "trainingExampleCount": training_example_count,
@@ -185,13 +216,15 @@ def build_training_metadata(
         "loraAlpha": config.get("lora_alpha", 32),
         "loraDropout": config.get("lora_dropout", 0.05),
         "maxSeqLength": config.get("max_seq_length", 1024),
-        "createdAt": datetime.now(timezone.utc).isoformat(),
-        "gitCommit": resolve_git_commit(),
         "device": device,
         "cudaAvailable": cuda_available,
+        "startedAt": started_at,
+        "completedAt": completed_at,
         "trainingDurationSeconds": round(training_duration_seconds, 2),
         "finalTrainLoss": final_train_loss,
         "finalEvalLoss": final_eval_loss,
+        "gitCommit": resolve_git_commit(),
+        "notes": notes,
     }
 
 
@@ -215,23 +248,29 @@ def extract_last_metric(log_history: List[Dict[str, Any]], key: str) -> Optional
 
 
 def run_mock_training(args: argparse.Namespace, config: Dict[str, Any]) -> Dict[str, Any]:
-    output_dir = Path(args.output_dir or config.get("output_dir", "ml/adapters/local-lora-tutor-v1"))
+    output_dir = resolve_output_dir(config, args)
     output_dir.mkdir(parents=True, exist_ok=True)
-    adapter_name = config.get("adapter_name", output_dir.name)
+    adapter_name = resolve_adapter_name(config, output_dir, args.adapter_name)
+    started_at = datetime.now(timezone.utc).isoformat()
     metadata = build_training_metadata(
         config=config,
         adapter_name=adapter_name,
         base_model=config.get("base_model", "HuggingFaceTB/SmolLM2-135M-Instruct"),
         dataset_path=args.dataset,
         validation_path=args.validation,
+        dataset_name=args.dataset_name,
+        dataset_id=args.dataset_id,
         training_example_count=count_jsonl_rows(args.dataset),
         validation_example_count=count_jsonl_rows(args.validation),
         is_mock_training=True,
         device="mock",
         cuda_available=False,
+        started_at=started_at,
+        completed_at=started_at,
         training_duration_seconds=0,
         final_train_loss=None,
         final_eval_loss=None,
+        notes=args.notes,
     )
     (output_dir / "adapter_config.json").write_text(
         json.dumps({"mock": True, "adapterName": adapter_name}, ensure_ascii=False, indent=2),
@@ -267,15 +306,16 @@ def main() -> None:
         sys.exit(1)
 
     base_model = config.get("base_model", "HuggingFaceTB/SmolLM2-135M-Instruct")
-    output_dir = Path(args.output_dir or config.get("output_dir", "ml/adapters/local-lora-tutor-v1"))
+    output_dir = resolve_output_dir(config, args)
     output_dir.mkdir(parents=True, exist_ok=True)
-    adapter_name = config.get("adapter_name", output_dir.name)
+    adapter_name = resolve_adapter_name(config, output_dir, args.adapter_name)
     max_seq_length = int(config.get("max_seq_length", 1024))
     training_example_count = count_jsonl_rows(args.dataset)
     validation_example_count = count_jsonl_rows(args.validation)
     device_state = detect_device(torch)
 
-    started_at = time.time()
+    started_at = datetime.now(timezone.utc).isoformat()
+    started_at_seconds = time.time()
 
     print(f"Loading base model: {base_model}")
     print(f"Training device: {device_state['device']}")
@@ -376,14 +416,19 @@ def main() -> None:
         base_model=base_model,
         dataset_path=args.dataset,
         validation_path=args.validation,
+        dataset_name=args.dataset_name,
+        dataset_id=args.dataset_id,
         training_example_count=training_example_count,
         validation_example_count=validation_example_count,
         is_mock_training=False,
         device=str(device_state["device"]),
         cuda_available=bool(device_state["cudaAvailable"]),
-        training_duration_seconds=time.time() - started_at,
+        started_at=started_at,
+        completed_at=datetime.now(timezone.utc).isoformat(),
+        training_duration_seconds=time.time() - started_at_seconds,
         final_train_loss=final_train_loss,
         final_eval_loss=final_eval_loss,
+        notes=args.notes,
     )
     metadata_path = write_training_metadata(output_dir, metadata)
 

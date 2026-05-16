@@ -125,10 +125,30 @@ const scoreEvalOutput = (evalCase: EvalCase, output: string) => {
       ? /(\?|A\.|B\.|C\.|D\.)/.test(output)
         ? 0.15
         : 0
+      : evalCase.category === 'generate_flashcards'
+        ? /(^[-*•]|\n[-*•]|\bterm\b|\bdefinition\b|\bq:\b|\ba:\b)/im.test(output)
+          ? 0.12
+          : 0
       : evalCase.category === 'summarize_lesson'
         ? /(^[-*•]|\n[-*•]|\n\d+\.)/m.test(output)
           ? 0.1
           : 0
+        : evalCase.category === 'study_plan'
+          ? /(\bngay\b|\btuan\b|day\s*\d+|week\s*\d+|^\d+\.)/im.test(output)
+            ? 0.12
+            : 0
+          : evalCase.category === 'compare_concepts'
+            ? /(giống|khác|so sánh|similar|different|whereas|while)/i.test(output)
+              ? 0.08
+              : 0
+            : evalCase.category === 'give_example'
+              ? /(ví dụ|example|for instance|class|public)/i.test(output)
+                ? 0.08
+                : 0
+              : evalCase.category === 'correct_student_answer' || evalCase.category === 'grade_answer'
+                ? /(đúng|sai|cần sửa|correct|incorrect|revise)/i.test(output)
+                  ? 0.08
+                  : 0
         : evalCase.category === 'source_grounded_answer'
           ? /(nguon|source|tai lieu|trich)/i.test(output)
             ? 0.08
@@ -351,6 +371,7 @@ export class EvalsService {
     const results = await Promise.all(evalCases.map(async (evalCase) => {
       try {
         let output: string;
+        let latencyMs = 0;
 
         if (provider === 'internal_l3_tutor') {
           if (!this.internalL3TutorModelService) {
@@ -376,6 +397,7 @@ export class EvalsService {
             modelVersionId,
           });
           output = response.contentMarkdown;
+          latencyMs = response.latencyMs ?? 0;
         } else {
           const prompt = buildEvalPrompt(evalCase);
           const response = await this.modelGatewayService.generateSingle({
@@ -387,6 +409,7 @@ export class EvalsService {
             temperature: 0.2,
           });
           output = response.text;
+          latencyMs = response.latencyMs ?? 0;
         }
 
         const scoring = scoreEvalOutput(evalCase, output);
@@ -395,24 +418,48 @@ export class EvalsService {
           evalCaseId: evalCase.id,
           output,
           score: scoring.score,
-          notes: scoring.notes,
+          notes: `${scoring.notes} Latency: ${latencyMs}ms.`,
+          latencyMs,
+          failed: false,
         };
       } catch (error) {
+        const message = error instanceof Error ? error.message : 'Benchmark execution failed.';
         return {
           evalCaseId: evalCase.id,
           output: '',
           score: 0,
-          notes: error instanceof Error ? error.message : 'Benchmark execution failed.',
+          notes: message,
+          latencyMs: 0,
+          failed: true,
         };
       }
     }));
+
+    const completedLatencies = results
+      .map((result) => result.latencyMs)
+      .filter((value) => typeof value === 'number' && value > 0);
+    const averageLatencyMs =
+      completedLatencies.length === 0
+        ? 0
+        : Math.round(
+            completedLatencies.reduce((total, latency) => total + latency, 0) / completedLatencies.length,
+          );
+    const timeoutCount = results.filter((result) => /LOCAL_LORA_TIMEOUT/i.test(result.notes ?? '')).length;
+    const errorCount = results.filter((result) => result.failed).length;
+    const fallbackCount = 0;
+    const benchmarkSummary = [
+      `avgLatencyMs=${averageLatencyMs}`,
+      `timeoutCount=${timeoutCount}`,
+      `fallbackCount=${fallbackCount}`,
+      `errorCount=${errorCount}`,
+    ].join('; ');
 
     const run = await this.repository.createRun({
       provider,
       model,
       modelVersionId,
       averageScore: average(results.map((result) => result.score)),
-      notes: input.notes?.trim() ?? null,
+      notes: [input.notes?.trim(), benchmarkSummary].filter(Boolean).join(' | ') || null,
       results,
     });
 

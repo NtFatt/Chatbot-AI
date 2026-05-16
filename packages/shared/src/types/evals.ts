@@ -3,10 +3,15 @@ import type { TrainingMessage } from './training';
 
 export type EvalCategory =
   | 'explain_concept'
+  | 'give_example'
+  | 'compare_concepts'
   | 'socratic_hint'
   | 'grade_answer'
+  | 'correct_student_answer'
   | 'generate_quiz'
+  | 'generate_flashcards'
   | 'summarize_lesson'
+  | 'study_plan'
   | 'source_grounded_answer'
   | 'fallback_transparency';
 

@@ -35,6 +35,7 @@ export const ProviderBadge = ({
         ? `L3 fallback · ${provider}`
         : provider;
   const secondaryLabel = isLocalLora ? 'L4 Runtime' : isInternalL3 ? 'L3 Tutor Model' : model;
+  const tertiaryLabel = isLocalLora ? model : null;
 
   return (
     <span
@@ -48,6 +49,7 @@ export const ProviderBadge = ({
       {fallbackUsed ? <ShieldAlert className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}
       <span className="font-semibold">{primaryLabel}</span>
       {secondaryLabel ? <span className="text-[10px] text-current/70">{secondaryLabel}</span> : null}
+      {tertiaryLabel ? <span className="text-[10px] text-current/60">{tertiaryLabel}</span> : null}
       {fallbackUsed ? <span className="rounded-full bg-current/10 px-1.5 py-0.5 text-[10px]">fallback</span> : null}
     </span>
   );

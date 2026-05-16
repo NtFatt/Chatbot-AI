@@ -28,6 +28,7 @@ class ChatCompletionRequest(BaseModel):
     messages: List[Message]
     temperature: Optional[float] = 0.7
     max_tokens: Optional[int] = 96
+    top_p: Optional[float] = None
 
 
 MODEL = None
@@ -38,6 +39,24 @@ ADAPTER_PATH = "ml/adapters/local-lora-tutor-v1"
 ADAPTER_LOADED = False
 CUDA_AVAILABLE = False
 TRAINING_METADATA: Dict[str, Any] | None = None
+TRAINING_METADATA_PATH: str | None = None
+SERVING_DEVICE = "cpu"
+
+
+def build_startup_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--adapter", "--adapter_dir", dest="adapter_dir", type=str, default="ml/adapters/local-lora-tutor-v1")
+    parser.add_argument("--model", dest="model_name", type=str, default=None)
+    parser.add_argument("--mock", action="store_true", help="Run in mock mode without loading real models")
+    return parser
+
+
+def build_server_arg_parser() -> argparse.ArgumentParser:
+    parser = build_startup_arg_parser()
+    parser.add_argument("--port", type=int, default=8008)
+    parser.add_argument("--host", type=str, default="0.0.0.0")
+    parser.add_argument("--reload", action="store_true", help="Enable auto reload for local development")
+    return parser
 
 
 def render_messages_as_prompt(messages: List[Dict[str, str]], tokenizer: Any) -> str:
@@ -74,25 +93,28 @@ def build_health_payload() -> Dict[str, Any]:
         "adapterLoaded": ADAPTER_LOADED,
         "modelLoaded": MODEL is not None,
         "adapterPath": ADAPTER_PATH,
+        "trainingMetadataPath": TRAINING_METADATA_PATH,
         "cudaAvailable": CUDA_AVAILABLE,
+        "device": SERVING_DEVICE,
+        "baseModel": TRAINING_METADATA.get("baseModel") if TRAINING_METADATA else None,
+        "isMockTraining": TRAINING_METADATA.get("isMockTraining") if TRAINING_METADATA else MOCK_MODE,
     }
 
 
 @app.on_event("startup")
 def load_model() -> None:
-    global MODEL, TOKENIZER, MOCK_MODE, MODEL_NAME, ADAPTER_PATH, ADAPTER_LOADED, CUDA_AVAILABLE, TRAINING_METADATA
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--adapter_dir", type=str, default="ml/adapters/local-lora-tutor-v1")
-    parser.add_argument("--mock", action="store_true", help="Run in mock mode without loading real models")
-    args, _ = parser.parse_known_args()
+    global MODEL, TOKENIZER, MOCK_MODE, MODEL_NAME, ADAPTER_PATH, ADAPTER_LOADED, CUDA_AVAILABLE, TRAINING_METADATA, TRAINING_METADATA_PATH, SERVING_DEVICE
+    args, _ = build_startup_arg_parser().parse_known_args()
 
     MODEL = None
     TOKENIZER = None
     ADAPTER_LOADED = False
     TRAINING_METADATA = None
+    TRAINING_METADATA_PATH = None
+    SERVING_DEVICE = "cpu"
     MOCK_MODE = args.mock
     ADAPTER_PATH = args.adapter_dir
-    MODEL_NAME = os.environ.get("LOCAL_LORA_MODEL", "local-lora-tutor-v1")
+    MODEL_NAME = args.model_name or os.environ.get("LOCAL_LORA_MODEL", "local-lora-tutor-v1")
 
     if MOCK_MODE:
         print("Starting Local LoRA server in MOCK MODE.")
@@ -100,6 +122,7 @@ def load_model() -> None:
 
     adapter_dir = Path(args.adapter_dir)
     metadata_path = adapter_dir / "training-metadata.json"
+    TRAINING_METADATA_PATH = str(metadata_path)
 
     if not adapter_dir.exists() or not metadata_path.exists():
         print(f"Adapter artifacts missing at {adapter_dir}. Falling back to MOCK MODE.")
@@ -124,11 +147,8 @@ def load_model() -> None:
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
         CUDA_AVAILABLE = bool(torch.cuda.is_available())
-        MODEL_NAME = (
-            TRAINING_METADATA.get("fineTunedModel")
-            or TRAINING_METADATA.get("adapterName")
-            or MODEL_NAME
-        )
+        SERVING_DEVICE = "cuda" if CUDA_AVAILABLE else "cpu"
+        MODEL_NAME = args.model_name or TRAINING_METADATA.get("fineTunedModel") or TRAINING_METADATA.get("adapterName") or MODEL_NAME
         base_model = TRAINING_METADATA.get("baseModel") or "HuggingFaceTB/SmolLM2-135M-Instruct"
 
         TOKENIZER = AutoTokenizer.from_pretrained(base_model)
@@ -145,9 +165,11 @@ def load_model() -> None:
 
         base = AutoModelForCausalLM.from_pretrained(base_model, torch_dtype=torch_dtype)
         MODEL = PeftModel.from_pretrained(base, str(adapter_dir))
+        if CUDA_AVAILABLE:
+            MODEL = MODEL.to("cuda")
         MODEL.eval()
         ADAPTER_LOADED = True
-        print(f"Loaded Local LoRA adapter from {adapter_dir}")
+        print(f"Loaded Local LoRA adapter from {adapter_dir} on {SERVING_DEVICE}")
     except Exception as error:
         print(f"Error loading Local LoRA adapter: {error}")
         print("Falling back to MOCK MODE.")
@@ -205,12 +227,18 @@ async def chat_completions(request: ChatCompletionRequest) -> Dict[str, Any]:
         inputs = {key: value.to(MODEL.device) for key, value in inputs.items()}
 
         with torch.no_grad():
+            generation_kwargs = {
+                "max_new_tokens": request.max_tokens,
+                "temperature": request.temperature,
+                "do_sample": (request.temperature or 0) > 0,
+                "pad_token_id": TOKENIZER.eos_token_id,
+            }
+            if request.top_p is not None:
+                generation_kwargs["top_p"] = request.top_p
+
             outputs = MODEL.generate(
                 **inputs,
-                max_new_tokens=request.max_tokens,
-                temperature=request.temperature,
-                do_sample=(request.temperature or 0) > 0,
-                pad_token_id=TOKENIZER.eos_token_id,
+                **generation_kwargs,
             )
 
         generated_tokens = outputs[0][len(inputs["input_ids"][0]) :]
@@ -248,11 +276,7 @@ async def chat_completions(request: ChatCompletionRequest) -> Dict[str, Any]:
 if __name__ == "__main__":
     import uvicorn
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--port", type=int, default=8008)
-    parser.add_argument("--host", type=str, default="0.0.0.0")
-    parser.add_argument("--reload", action="store_true", help="Enable auto reload for local development")
-    args, _ = parser.parse_known_args()
+    args, _ = build_server_arg_parser().parse_known_args()
 
     if args.reload:
         uvicorn.run("ml.scripts.serve_local_lora:app", host=args.host, port=args.port, reload=True)

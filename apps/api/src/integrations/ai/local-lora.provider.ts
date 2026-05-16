@@ -26,8 +26,6 @@ interface LocalLoraCompletionResponse {
   usage?: LocalLoraUsage;
 }
 
-const DEFAULT_LOCAL_LORA_MAX_TOKENS = 96;
-
 export class LocalLoraProvider implements AIProvider {
   readonly key = 'local_lora';
 
@@ -70,8 +68,9 @@ export class LocalLoraProvider implements AIProvider {
         body: JSON.stringify({
           model: request.model || env.LOCAL_LORA_MODEL,
           messages: formattedMessages,
-          temperature: request.temperature,
-          max_tokens: DEFAULT_LOCAL_LORA_MAX_TOKENS,
+          temperature: request.temperature ?? env.LOCAL_LORA_TEMPERATURE,
+          max_tokens: env.LOCAL_LORA_MAX_NEW_TOKENS,
+          top_p: env.LOCAL_LORA_TOP_P,
         }),
         signal: controller.signal,
       });

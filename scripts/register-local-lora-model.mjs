@@ -51,17 +51,39 @@ const loadEnvDefaults = () => {
 loadEnvDefaults();
 
 export const LOCAL_LORA_RUNTIME_GROUP = ['local_lora', 'local_ollama'];
-export const DEFAULT_LOCAL_LORA_NAME = 'Local LoRA Tutor v1';
-export const DEFAULT_ADAPTER_PATH = 'ml/adapters/local-lora-tutor-v1';
-export const DEFAULT_TRAINING_METADATA_PATH = path.join(DEFAULT_ADAPTER_PATH, 'training-metadata.json');
+export const DEFAULT_LOCAL_LORA_MODEL = process.env.LOCAL_LORA_MODEL ?? 'local-lora-tutor-v1';
+
+export const deriveLocalLoraDisplayName = (modelName = DEFAULT_LOCAL_LORA_MODEL) => {
+  const normalized = modelName.trim();
+  const versionMatch = normalized.match(/(?:^|[-_])v(\d+)$/i);
+
+  if (versionMatch) {
+    return `Local LoRA Tutor v${versionMatch[1]}`;
+  }
+
+  const words = normalized
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1));
+
+  return words.length > 0 ? words.join(' ') : 'Local LoRA Tutor';
+};
+
+export const buildAdapterPathForModel = (modelName = DEFAULT_LOCAL_LORA_MODEL) =>
+  path.join('ml', 'adapters', modelName);
+
+export const buildTrainingMetadataPathForAdapter = (adapterPath) =>
+  path.join(adapterPath, 'training-metadata.json');
 
 export const parseCliArgs = (args = process.argv.slice(2)) => {
   const options = {
     real: false,
-    adapterPath: DEFAULT_ADAPTER_PATH,
-    trainingMetadataPath: DEFAULT_TRAINING_METADATA_PATH,
+    model: DEFAULT_LOCAL_LORA_MODEL,
+    adapterPath: '',
+    trainingMetadataPath: '',
     datasetId: null,
-    datasetExampleCount: null,
+    datasetName: null,
+    trainingExampleCount: null,
     validationExampleCount: null,
   };
 
@@ -69,17 +91,28 @@ export const parseCliArgs = (args = process.argv.slice(2)) => {
     const arg = args[index];
     if (arg === '--real') {
       options.real = true;
-    } else if (arg === '--adapter-path') {
+    } else if (arg === '--model') {
+      options.model = args[++index] ?? options.model;
+    } else if (arg === '--adapter' || arg === '--adapter-path') {
       options.adapterPath = args[++index] ?? options.adapterPath;
     } else if (arg === '--training-metadata-path') {
       options.trainingMetadataPath = args[++index] ?? options.trainingMetadataPath;
     } else if (arg === '--dataset-id') {
       options.datasetId = args[++index] ?? null;
-    } else if (arg === '--dataset-example-count') {
-      options.datasetExampleCount = Number(args[++index] ?? NaN);
+    } else if (arg === '--dataset-name') {
+      options.datasetName = args[++index] ?? null;
+    } else if (arg === '--training-example-count' || arg === '--dataset-example-count') {
+      options.trainingExampleCount = Number(args[++index] ?? NaN);
     } else if (arg === '--validation-example-count') {
       options.validationExampleCount = Number(args[++index] ?? NaN);
     }
+  }
+
+  if (!options.adapterPath) {
+    options.adapterPath = buildAdapterPathForModel(options.model);
+  }
+  if (!options.trainingMetadataPath) {
+    options.trainingMetadataPath = buildTrainingMetadataPathForAdapter(options.adapterPath);
   }
 
   return options;
@@ -94,16 +127,20 @@ export const buildLocalLoraMetadata = (overrides = {}) => ({
   ...overrides,
 });
 
-export const buildLocalLoraVersionInput = (overrides = {}) => ({
-  name: DEFAULT_LOCAL_LORA_NAME,
-  provider: 'local_lora',
-  baseModel: 'local-lora-base',
-  fineTunedModel: process.env.LOCAL_LORA_MODEL ?? 'local-lora-tutor-v1',
-  status: 'ready',
-  isActive: true,
-  metadata: buildLocalLoraMetadata(),
-  ...overrides,
-});
+export const buildLocalLoraVersionInput = (overrides = {}) => {
+  const fineTunedModel = overrides.fineTunedModel ?? DEFAULT_LOCAL_LORA_MODEL;
+
+  return {
+    name: overrides.name ?? deriveLocalLoraDisplayName(fineTunedModel),
+    provider: 'local_lora',
+    baseModel: 'local-lora-base',
+    fineTunedModel,
+    status: 'ready',
+    isActive: true,
+    metadata: buildLocalLoraMetadata(),
+    ...overrides,
+  };
+};
 
 export const readTrainingMetadata = (trainingMetadataPath) => {
   const resolvedPath = path.resolve(projectRoot, trainingMetadataPath);
@@ -115,31 +152,39 @@ export const readTrainingMetadata = (trainingMetadataPath) => {
 };
 
 export const buildRealLocalLoraVersionInput = (options = {}) => {
-  const metadataPath = options.trainingMetadataPath ?? DEFAULT_TRAINING_METADATA_PATH;
-  const adapterPath = options.adapterPath ?? DEFAULT_ADAPTER_PATH;
+  const metadataPath =
+    options.trainingMetadataPath ??
+    buildTrainingMetadataPathForAdapter(options.adapterPath ?? buildAdapterPathForModel(options.model));
+  const adapterPath = options.adapterPath ?? buildAdapterPathForModel(options.model);
   const trainingMetadata = options.trainingMetadata ?? readTrainingMetadata(metadataPath);
 
   if (trainingMetadata.isMockTraining) {
     throw new Error('Training metadata is marked as mock. Refusing to register it as a real Local LoRA adapter.');
   }
 
+  const fineTunedModel =
+    options.model ??
+    trainingMetadata.fineTunedModel ??
+    trainingMetadata.adapterName ??
+    process.env.LOCAL_LORA_MODEL ??
+    'local-lora-tutor-v1';
+
   return buildLocalLoraVersionInput({
-    name: DEFAULT_LOCAL_LORA_NAME,
+    name: deriveLocalLoraDisplayName(fineTunedModel),
     baseModel: trainingMetadata.baseModel ?? 'unknown-base-model',
-    fineTunedModel:
-      trainingMetadata.fineTunedModel ??
-      trainingMetadata.adapterName ??
-      process.env.LOCAL_LORA_MODEL ??
-      'local-lora-tutor-v1',
+    fineTunedModel,
     metadata: buildLocalLoraMetadata({
       source: 'real-local-lora-training',
       note: 'Real Local LoRA adapter trained locally. Validate quality with browser smoke and eval benchmarks.',
       endpoint: process.env.LOCAL_LORA_BASE_URL ?? 'http://localhost:8008',
       adapterPath,
       trainingMetadataPath: metadataPath,
-      datasetId: options.datasetId ?? null,
-      datasetExampleCount:
-        Number.isFinite(options.datasetExampleCount) ? options.datasetExampleCount : trainingMetadata.trainingExampleCount ?? null,
+      datasetName: options.datasetName ?? trainingMetadata.datasetName ?? null,
+      datasetId: options.datasetId ?? trainingMetadata.datasetId ?? null,
+      trainingExampleCount:
+        Number.isFinite(options.trainingExampleCount)
+          ? options.trainingExampleCount
+          : trainingMetadata.trainingExampleCount ?? null,
       validationExampleCount:
         Number.isFinite(options.validationExampleCount)
           ? options.validationExampleCount
@@ -211,12 +256,13 @@ export async function runRegister(prisma = new PrismaClient(), options = parseCl
     prisma,
     options.real
       ? buildRealLocalLoraVersionInput(options)
-      : {
-          fineTunedModel: process.env.LOCAL_LORA_MODEL ?? 'local-lora-tutor-v1',
+      : buildLocalLoraVersionInput({
+          name: deriveLocalLoraDisplayName(options.model),
+          fineTunedModel: options.model,
           metadata: buildLocalLoraMetadata({
             endpoint: process.env.LOCAL_LORA_BASE_URL ?? 'http://localhost:8008',
           }),
-        },
+        }),
   );
 
   console.log(`Activated Local LoRA model version: ${version.id}`);

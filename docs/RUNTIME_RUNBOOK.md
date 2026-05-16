@@ -38,7 +38,10 @@ L3_ALLOW_EXTERNAL_FALLBACK=false
 L3_INTERNAL_MODEL_NAME=internal-l3-tutor-v1
 LOCAL_LORA_ENABLED=false
 LOCAL_LORA_BASE_URL=http://localhost:8008
-LOCAL_LORA_MODEL=local-lora-tutor-v1
+LOCAL_LORA_MODEL=local-lora-tutor-v2
+LOCAL_LORA_MAX_NEW_TOKENS=64
+LOCAL_LORA_TEMPERATURE=0.2
+LOCAL_LORA_TOP_P=0.9
 ```
 
 Default behavior:
@@ -57,12 +60,12 @@ Default behavior:
   - `InternalL3TutorModelService`
   - safe local study fallback
   - optional external fallback only when `L3_ALLOW_EXTERNAL_FALLBACK=true`
-- Real Local LoRA validation now exists for a tiny synthetic dev dataset:
-  - real adapter trained locally
-  - real FastAPI serving mode
-  - real browser smoke
-  - persisted eval runs
-- This is still **not** a full Level 4 claim because quality and throughput remain weak.
+- Real Local LoRA validation now exists for the curated v2 dataset:
+  - real adapter retrained locally on GPU
+  - real FastAPI serving mode with explicit adapter/model selection
+  - real browser smoke with Internal L3 fallback
+  - persisted eval runs for v2
+- This is still **not** a full Level 4 claim because quality is still below `internal_l3_tutor` and average local latency remains high.
 
 ## Manual smoke checklist
 
@@ -111,15 +114,18 @@ node scripts/register-local-lora-model.mjs
 1. Ensure:
    - `LOCAL_LORA_ENABLED=true`
    - `LOCAL_LORA_BASE_URL=http://localhost:8008`
-   - `LOCAL_LORA_MODEL=local-lora-tutor-v1`
+   - `LOCAL_LORA_MODEL=local-lora-tutor-v2`
+   - `LOCAL_LORA_MAX_NEW_TOKENS=64`
+   - `LOCAL_LORA_TEMPERATURE=0.2`
+   - `LOCAL_LORA_TOP_P=0.9`
    - `L3_ALLOW_EXTERNAL_FALLBACK=false`
 2. Train a real adapter and confirm:
-   - `ml/adapters/local-lora-tutor-v1/training-metadata.json`
+   - `ml/adapters/local-lora-tutor-v2/training-metadata.json`
    - `"isMockTraining": false`
 3. Start the real server:
 
 ```bash
-python ml/scripts/serve_local_lora.py
+.\.venv-l4\Scripts\python.exe ml/scripts/serve_local_lora.py --adapter ml/adapters/local-lora-tutor-v2 --model local-lora-tutor-v2
 ```
 
 4. Check health:
@@ -133,11 +139,13 @@ Expected:
 - `mode=real`
 - `adapterLoaded=true`
 - `modelLoaded=true`
+- `model=local-lora-tutor-v2`
+- `device=cuda`
 
 5. Register the real model:
 
 ```bash
-node scripts/register-local-lora-model.mjs --real
+node scripts/register-local-lora-model.mjs --real --model local-lora-tutor-v2 --adapter ml/adapters/local-lora-tutor-v2
 ```
 
 6. Open a fresh session in `AI học tập Level 3`.
@@ -180,13 +188,14 @@ Check API logs for `Internal L3 Tutor failed`.
 
 ### AI Lab evals show poor Local LoRA results
 
-This is currently expected for the tiny synthetic demo adapter:
+This is still possible even after the v2 retrain:
 
 - the real runtime path is valid
-- the current adapter was trained on only `24` approved synthetic examples
-- longer eval prompts can still hit `LOCAL_LORA_TIMEOUT after 30000ms`
+- the current v2 adapter improves over v1, but it is still a small LoRA fine-tune on `90/10` train/validation examples
+- local serving must actually run on `device=cuda`; if it stays on CPU, timeout rates will spike
+- even on CUDA, quality still trails `internal_l3_tutor` and average latency remains high
 
-Treat the current result as runtime validation, not a model-quality claim.
+Treat the current result as a validated fine-tuned runtime milestone, not a production-quality claim.
 
 ### Local LoRA does not activate in Learning Engine mode
 
@@ -199,6 +208,16 @@ Check:
 - `pnpm test` still passes after any Local LoRA config change
 
 If the local server is offline, the router should fall back to `Internal L3 Tutor` without touching Gemini/OpenAI unless `L3_ALLOW_EXTERNAL_FALLBACK=true`.
+
+### Local LoRA server says CUDA is available but benchmark latency is still terrible
+
+Check:
+
+- `GET http://localhost:8008/health` returns `device=cuda`
+- the server was started with `--adapter ml/adapters/local-lora-tutor-v2 --model local-lora-tutor-v2`
+- `LOCAL_LORA_MAX_NEW_TOKENS` is capped to a reasonable value like `64`
+
+If `/health` shows `cudaAvailable=true` but `device=cpu`, the model was not actually moved onto the GPU and the benchmark result is not representative.
 
 ## Health fields
 

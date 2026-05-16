@@ -200,7 +200,7 @@ describe('ChatMessageBubble', () => {
           content: 'Mock local lora content',
           status: 'sent',
           provider: 'local_lora',
-          model: 'local-lora-tutor-v1',
+          model: 'local-lora-tutor-v2',
           modelVersionId: 'mv-local-lora',
           aiRuntimeMode: 'learning_engine_l3',
           learningEngineUsed: true,
@@ -223,7 +223,7 @@ describe('ChatMessageBubble', () => {
             materials: [],
             aiRuntimeMode: 'learning_engine_l3',
             executionProvider: 'local_lora',
-            executionModel: 'local-lora-tutor-v1',
+            executionModel: 'local-lora-tutor-v2',
             learningEngineUsed: true,
             externalFallbackUsed: false,
             modelVersionId: 'mv-local-lora',
@@ -237,6 +237,7 @@ describe('ChatMessageBubble', () => {
 
     expect(screen.getByText('Local LoRA Tutor')).toBeTruthy();
     expect(screen.getByText('L4 Runtime')).toBeTruthy();
+    expect(screen.getByText('local-lora-tutor-v2')).toBeTruthy();
     expect(screen.queryByText(/^GEMINI$/i)).toBeNull();
   });
 });
