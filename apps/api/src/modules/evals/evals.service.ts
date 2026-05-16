@@ -3,6 +3,7 @@ import type {
   CreateEvalRunInput,
   EvalCase,
   EvalRun,
+  ChatMessage,
   ProviderKey,
   TrainingMessage,
   UpdateEvalCaseInput,
@@ -15,6 +16,7 @@ import type {
 
 import { ModelGatewayService } from '../../integrations/ai/model-gateway.service';
 import type { AIConversationMessage } from '../../integrations/ai/ai.types';
+import { InternalL3TutorModelService } from '../../integrations/ai/internal-l3-tutor-model.service';
 import { AppError } from '../../utils/errors';
 import { ModelRegistryService } from '../model-registry/model-registry.service';
 import { ProvidersService } from '../providers/providers.service';
@@ -146,6 +148,10 @@ const scoreEvalOutput = (evalCase: EvalCase, output: string) => {
 
 const resolveRuntimeProvider = (provider: string): ProviderKey => {
   switch (provider) {
+    case 'internal_l3_tutor':
+      return 'internal_l3_tutor';
+    case 'local_lora':
+      return 'local_lora';
     case 'gemini':
       return 'GEMINI';
     case 'openai':
@@ -160,12 +166,95 @@ const resolveRuntimeProvider = (provider: string): ProviderKey => {
   }
 };
 
+const inferEvalLanguage = (evalCase: EvalCase) => {
+  const combined = [
+    evalCase.name,
+    evalCase.description ?? '',
+    evalCase.idealResponse ?? '',
+    ...evalCase.inputMessages.map((message) => message.content),
+  ].join('\n');
+
+  return /[ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i.test(
+    combined,
+  )
+    ? 'vi'
+    : 'en';
+};
+
+const toEvalChatMessages = (evalCase: EvalCase): ChatMessage[] => {
+  const now = new Date().toISOString();
+  const messages = evalCase.inputMessages
+    .filter((message) => message.role !== 'system')
+    .map((message, index) => ({
+      id: `eval-message-${evalCase.id}-${index}`,
+      sessionId: `eval-session-${evalCase.id}`,
+      clientMessageId: `eval-client-${evalCase.id}-${index}`,
+      parentClientMessageId: null,
+      senderType: message.role === 'assistant' ? 'assistant' : 'user',
+      content: message.content,
+      status: 'sent',
+      provider: null,
+      model: null,
+      providerRequestId: null,
+      responseFinishReason: null,
+      latencyMs: null,
+      inputTokens: null,
+      outputTokens: null,
+      totalTokens: null,
+      confidenceScore: null,
+      confidenceLevel: null,
+      subjectLabel: null,
+      topicLabel: null,
+      levelLabel: null,
+      fallbackUsed: false,
+      retrievalSnapshot: null,
+      errorCode: null,
+      createdAt: now,
+      updatedAt: now,
+    })) satisfies ChatMessage[];
+
+  if (messages.some((message) => message.senderType === 'user')) {
+    return messages;
+  }
+
+  return [
+    {
+      id: `eval-message-${evalCase.id}-user`,
+      sessionId: `eval-session-${evalCase.id}`,
+      clientMessageId: `eval-client-${evalCase.id}-user`,
+      parentClientMessageId: null,
+      senderType: 'user',
+      content: `${evalCase.name}\n\n${evalCase.description ?? 'Provide the best response for this evaluation case.'}`,
+      status: 'sent',
+      provider: null,
+      model: null,
+      providerRequestId: null,
+      responseFinishReason: null,
+      latencyMs: null,
+      inputTokens: null,
+      outputTokens: null,
+      totalTokens: null,
+      confidenceScore: null,
+      confidenceLevel: null,
+      subjectLabel: null,
+      topicLabel: null,
+      levelLabel: null,
+      fallbackUsed: false,
+      retrievalSnapshot: null,
+      errorCode: null,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ];
+};
+
 export class EvalsService {
   constructor(
     private readonly repository: EvalsRepository,
     private readonly providersService: ProvidersService,
     private readonly modelRegistryService: ModelRegistryService,
     private readonly modelGatewayService: ModelGatewayService,
+    private readonly internalL3TutorModelService?: InternalL3TutorModelService,
   ) {}
 
   async listCases(): Promise<EvalCase[]> {
@@ -233,6 +322,21 @@ export class EvalsService {
       provider = resolveRuntimeProvider(version.provider);
       model = version.fineTunedModel ?? version.baseModel;
       modelVersionId = version.id;
+    } else if (input.provider === 'internal_l3_tutor' || input.provider === 'local_lora') {
+      const activeVersion = (await this.modelRegistryService.listActiveVersions()).find(
+        (version) => version.provider === input.provider,
+      );
+      if (!activeVersion && !input.model) {
+        throw new AppError(
+          400,
+          'EVAL_MODEL_TARGET_REQUIRED',
+          'A ready active model version or explicit model name is required for this benchmark target.',
+        );
+      }
+
+      provider = input.provider;
+      model = input.model ?? activeVersion?.fineTunedModel ?? activeVersion?.baseModel ?? '';
+      modelVersionId = activeVersion?.id ?? null;
     } else {
       const providerState = await this.providersService.listProviders();
       provider = input.provider ?? providerState.defaultProvider;
@@ -245,21 +349,51 @@ export class EvalsService {
     }
 
     const results = await Promise.all(evalCases.map(async (evalCase) => {
-      const prompt = buildEvalPrompt(evalCase);
-
       try {
-        const response = await this.modelGatewayService.generateSingle({
-          provider,
-          model,
-          systemPrompt: prompt.systemPrompt,
-          messages: prompt.messages,
-          temperature: 0.2,
-        });
-        const scoring = scoreEvalOutput(evalCase, response.text);
+        let output: string;
+
+        if (provider === 'internal_l3_tutor') {
+          if (!this.internalL3TutorModelService) {
+            throw new AppError(
+              503,
+              'EVAL_PROVIDER_UNSUPPORTED',
+              'Internal L3 Tutor benchmarking is not configured on this server.',
+            );
+          }
+
+          const response = await this.internalL3TutorModelService.generate({
+            userId: `eval-user-${evalCase.id}`,
+            sessionId: `eval-session-${evalCase.id}`,
+            aiRuntimeMode: 'learning_engine_l3',
+            language: inferEvalLanguage(evalCase),
+            contextSummary: null,
+            messages: toEvalChatMessages(evalCase),
+            subjectHint: null,
+            retrievalSnapshot: {
+              queryExpansion: [],
+              materials: [],
+            },
+            modelVersionId,
+          });
+          output = response.contentMarkdown;
+        } else {
+          const prompt = buildEvalPrompt(evalCase);
+          const response = await this.modelGatewayService.generateSingle({
+            provider,
+            model,
+            modelVersionId,
+            systemPrompt: prompt.systemPrompt,
+            messages: prompt.messages,
+            temperature: 0.2,
+          });
+          output = response.text;
+        }
+
+        const scoring = scoreEvalOutput(evalCase, output);
 
         return {
           evalCaseId: evalCase.id,
-          output: response.text,
+          output,
           score: scoring.score,
           notes: scoring.notes,
         };

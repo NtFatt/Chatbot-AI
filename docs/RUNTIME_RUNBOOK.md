@@ -19,6 +19,7 @@ Use these commands for runtime validation in this workspace:
 | Force a session to L3 mode | `UPDATE chat_sessions SET "aiRuntimeMode" = 'learning_engine_l3' WHERE id = '<session-id>';` |
 | Check active model versions | `SELECT id, name, provider, "baseModel", "fineTunedModel", status, "isActive" FROM model_versions WHERE "isActive" = true;` |
 | Check L3 runtime flags | `pnpm ai:doctor` or `Invoke-RestMethod http://localhost:4000/health` |
+| Register the Local LoRA smoke model | `node scripts/register-local-lora-model.mjs` |
 
 ## Runtime behavior
 
@@ -50,12 +51,18 @@ Default behavior:
 
 - `local_lora` is an internal backend provider, not a frontend-direct model call.
 - It only runs when a ready active `local_lora` model version is selected in the model registry.
+- Usage and incident persistence for `local_lora` require migration `20260515143000_add_local_lora_provider_key`.
 - In `learning_engine_l3`, the route is:
   - active ready model override (`local_lora` or other supported runtime)
   - `InternalL3TutorModelService`
   - safe local study fallback
   - optional external fallback only when `L3_ALLOW_EXTERNAL_FALLBACK=true`
-- Local LoRA automated coverage is deterministic and mock-based. A real trained adapter is still a separate validation milestone.
+- Real Local LoRA validation now exists for a tiny synthetic dev dataset:
+  - real adapter trained locally
+  - real FastAPI serving mode
+  - real browser smoke
+  - persisted eval runs
+- This is still **not** a full Level 4 claim because quality and throughput remain weak.
 
 ## Manual smoke checklist
 
@@ -73,6 +80,71 @@ Default behavior:
    - `l3InternalModel`
    - `l3InternalModelName`
    - `l3ExternalFallbackAllowed`
+
+## Mock Local LoRA smoke
+
+1. Ensure:
+   - `LOCAL_LORA_ENABLED=true`
+   - `LOCAL_LORA_BASE_URL=http://localhost:8008`
+   - `LOCAL_LORA_MODEL=local-lora-tutor-v1`
+   - `L3_ALLOW_EXTERNAL_FALLBACK=false`
+2. Start the mock server:
+
+```bash
+python ml/scripts/serve_local_lora.py --mock
+```
+
+3. Activate the smoke model version:
+
+```bash
+node scripts/register-local-lora-model.mjs
+```
+
+4. Open a session in `AI học tập Level 3`.
+5. Ask a question and confirm the assistant badge shows `Local LoRA Tutor / L4 Runtime`.
+6. Stop the mock server and ask again.
+7. Confirm the next assistant badge falls back to `AI học tập Level 3 / Internal L3 Tutor`.
+8. Switch to `API AI lớn` and confirm Gemini/OpenAI still answer normally.
+
+## Real Local LoRA smoke
+
+1. Ensure:
+   - `LOCAL_LORA_ENABLED=true`
+   - `LOCAL_LORA_BASE_URL=http://localhost:8008`
+   - `LOCAL_LORA_MODEL=local-lora-tutor-v1`
+   - `L3_ALLOW_EXTERNAL_FALLBACK=false`
+2. Train a real adapter and confirm:
+   - `ml/adapters/local-lora-tutor-v1/training-metadata.json`
+   - `"isMockTraining": false`
+3. Start the real server:
+
+```bash
+python ml/scripts/serve_local_lora.py
+```
+
+4. Check health:
+
+```bash
+Invoke-RestMethod http://localhost:8008/health
+```
+
+Expected:
+
+- `mode=real`
+- `adapterLoaded=true`
+- `modelLoaded=true`
+
+5. Register the real model:
+
+```bash
+node scripts/register-local-lora-model.mjs --real
+```
+
+6. Open a fresh session in `AI học tập Level 3`.
+7. Ask a short Vietnamese study question.
+8. Confirm the assistant badge shows `Local LoRA Tutor / L4 Runtime`.
+9. Stop the local server and ask again.
+10. Confirm fallback to `AI học tập Level 3 / Internal L3 Tutor`.
 
 ## Troubleshooting
 
@@ -106,9 +178,15 @@ This means:
 
 Check API logs for `Internal L3 Tutor failed`.
 
-### AI Lab shows Internal L3 Tutor but evals cannot benchmark it
+### AI Lab evals show poor Local LoRA results
 
-This is expected today. The eval runner benchmarks external or fine-tuned OpenAI/Gemini runtime adapters. Internal L3 Tutor remains visible in the model registry panel but is filtered out of the benchmark model-version picker.
+This is currently expected for the tiny synthetic demo adapter:
+
+- the real runtime path is valid
+- the current adapter was trained on only `24` approved synthetic examples
+- longer eval prompts can still hit `LOCAL_LORA_TIMEOUT after 30000ms`
+
+Treat the current result as runtime validation, not a model-quality claim.
 
 ### Local LoRA does not activate in Learning Engine mode
 
@@ -117,6 +195,7 @@ Check:
 - `LOCAL_LORA_ENABLED=true`
 - the local server is reachable at `LOCAL_LORA_BASE_URL`
 - the target model version is `ready` and active in the `local_lora` runtime group
+- migration `20260515143000_add_local_lora_provider_key` has been applied
 - `pnpm test` still passes after any Local LoRA config change
 
 If the local server is offline, the router should fall back to `Internal L3 Tutor` without touching Gemini/OpenAI unless `L3_ALLOW_EXTERNAL_FALLBACK=true`.

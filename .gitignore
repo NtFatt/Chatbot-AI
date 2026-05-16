@@ -21,10 +21,12 @@ output/
 
 # ML Workspace
 ml/datasets/*.jsonl
+ml/datasets/**/*.jsonl
 ml/outputs/**
 ml/adapters/**
 __pycache__/
 *.pyc
+.venv-l4/
 Chatbot-AI-codex-initial-import.zip
 *.safetensors
 *.bin

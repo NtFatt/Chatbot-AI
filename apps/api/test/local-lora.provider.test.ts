@@ -78,6 +78,7 @@ describe('LocalLoraProvider', () => {
         { role: 'user', content: 'Giải thích OOP trong Java' },
       ],
       temperature: 0.2,
+      max_tokens: 96,
     });
     expect(JSON.stringify(init)).not.toContain('Authorization');
     expect(response).toMatchObject({

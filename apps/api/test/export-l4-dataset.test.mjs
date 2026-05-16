@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   collectApprovedRecords,
   enforceDatasetSize,
+  runExport,
   serializeRecordsToJsonl,
   splitRecords,
 } from '../../../scripts/export-l4-dataset.mjs';
@@ -91,5 +92,28 @@ describe('export-l4-dataset', () => {
       'Dataset only has 3 exportable approved examples. Need at least 20, or pass --allow-small.',
     );
     expect(() => enforceDatasetSize(3, true)).not.toThrow();
+  });
+
+  it('queries Prisma with the real lowercase approved enum value', async () => {
+    const prisma = {
+      trainingExample: {
+        findMany: async (args) => {
+          expect(args.where.status).toBe('approved');
+          return Array.from({ length: 20 }, (_, index) => ({
+            id: `example-${index}`,
+            status: 'approved',
+            inputMessages: [{ role: 'user', content: `Prompt ${index}` }],
+            idealResponse: `Response ${index}`,
+          }));
+        },
+      },
+    };
+
+    const result = await runExport(
+      ['--dataset-id', 'dataset-1', '--out', 'test-results/local-lora-export.jsonl', '--allow-small'],
+      prisma,
+    );
+
+    expect(result.exportedTrainCount).toBe(20);
   });
 });

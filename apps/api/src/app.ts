@@ -91,6 +91,7 @@ export const createApp = () => {
   );
   const sessionIntelligenceService = new SessionIntelligenceService(structuredOutputService);
   const internalL3TutorModelService = new InternalL3TutorModelService(usageService);
+  const evalInternalL3TutorModelService = new InternalL3TutorModelService();
   const aiRuntimeRouter = new AiRuntimeRouterService(
     aiOrchestrator,
     modelGatewayService,
@@ -121,6 +122,7 @@ export const createApp = () => {
     providersService,
     modelRegistryService,
     modelGatewayService,
+    evalInternalL3TutorModelService,
   );
 
   app.disable('x-powered-by');

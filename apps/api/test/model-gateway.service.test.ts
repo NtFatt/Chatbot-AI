@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { env } from '../src/config/env';
 import { AppError } from '../src/utils/errors';
 import { ModelGatewayService } from '../src/integrations/ai/model-gateway.service';
 
@@ -19,6 +20,22 @@ const createUsageService = () => ({
 });
 
 describe('ModelGatewayService', () => {
+  const originalLocalLoraEnabled = env.LOCAL_LORA_ENABLED;
+  const originalLocalLoraModel = env.LOCAL_LORA_MODEL;
+  const originalLocalLoraTimeoutMs = env.LOCAL_LORA_TIMEOUT_MS;
+
+  beforeEach(() => {
+    env.LOCAL_LORA_ENABLED = true;
+    env.LOCAL_LORA_MODEL = 'local-lora-tutor-v1';
+    env.LOCAL_LORA_TIMEOUT_MS = 15_000;
+  });
+
+  afterEach(() => {
+    env.LOCAL_LORA_ENABLED = originalLocalLoraEnabled;
+    env.LOCAL_LORA_MODEL = originalLocalLoraModel;
+    env.LOCAL_LORA_TIMEOUT_MS = originalLocalLoraTimeoutMs;
+  });
+
   it('routes local_lora through the gateway and preserves provider metadata', async () => {
     const providersService = createProvidersService();
     const providerHealthService = createProviderHealthService();
@@ -37,23 +54,6 @@ describe('ModelGatewayService', () => {
       }),
     };
 
-    providersService.listProviders.mockResolvedValue({
-      providers: [
-        {
-          key: 'local_lora',
-          enabled: true,
-          configured: true,
-          isPrimary: false,
-          model: 'local-lora-tutor-v1',
-          modelVersionId: 'model-version-local',
-          timeoutMs: 15_000,
-          maxRetries: 1,
-          healthState: 'healthy',
-          cooldownRemainingMs: 0,
-          runtimeSource: 'env',
-        },
-      ],
-    });
     providerHealthService.canAttempt.mockReturnValue({ allowed: true, cooldownRemainingMs: 0 });
 
     const gateway = new ModelGatewayService(
@@ -65,6 +65,7 @@ describe('ModelGatewayService', () => {
 
     const response = await gateway.generateSingle({
       provider: 'local_lora',
+      modelVersionId: 'model-version-local',
       userId: 'user-1',
       sessionId: 'session-1',
       messageId: 'message-1',
@@ -81,6 +82,7 @@ describe('ModelGatewayService', () => {
       temperature: undefined,
     });
     expect(providerHealthService.recordSuccess).toHaveBeenCalledWith('local_lora');
+    expect(providersService.listProviders).not.toHaveBeenCalled();
     expect(response).toMatchObject({
       provider: 'local_lora',
       model: 'local-lora-tutor-v1',
@@ -99,23 +101,6 @@ describe('ModelGatewayService', () => {
       generate: vi.fn().mockRejectedValue(new Error('ETIMEDOUT local lora server')),
     };
 
-    providersService.listProviders.mockResolvedValue({
-      providers: [
-        {
-          key: 'local_lora',
-          enabled: true,
-          configured: true,
-          isPrimary: false,
-          model: 'local-lora-tutor-v1',
-          modelVersionId: null,
-          timeoutMs: 15_000,
-          maxRetries: 1,
-          healthState: 'healthy',
-          cooldownRemainingMs: 0,
-          runtimeSource: 'env',
-        },
-      ],
-    });
     providerHealthService.canAttempt.mockReturnValue({ allowed: true, cooldownRemainingMs: 0 });
 
     const gateway = new ModelGatewayService(
@@ -129,6 +114,7 @@ describe('ModelGatewayService', () => {
     try {
       await gateway.generateSingle({
         provider: 'local_lora',
+        modelVersionId: 'model-version-local',
         userId: 'user-1',
         sessionId: 'session-1',
         messageId: 'message-1',

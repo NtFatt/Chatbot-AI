@@ -187,4 +187,56 @@ describe('ChatMessageBubble', () => {
     expect(screen.getByText('L3 fallback · GEMINI')).toBeTruthy();
     expect(screen.getByText(/^fallback$/i)).toBeTruthy();
   });
+
+  it('renders the Local LoRA badge for low-L4 runtime messages', () => {
+    render(
+      <ChatMessageBubble
+        message={{
+          id: 'assistant-local-lora',
+          sessionId: 'session-l4',
+          clientMessageId: 'assistant-local-lora',
+          parentClientMessageId: 'user-l4',
+          senderType: 'assistant',
+          content: 'Mock local lora content',
+          status: 'sent',
+          provider: 'local_lora',
+          model: 'local-lora-tutor-v1',
+          modelVersionId: 'mv-local-lora',
+          aiRuntimeMode: 'learning_engine_l3',
+          learningEngineUsed: true,
+          externalFallbackUsed: false,
+          providerRequestId: null,
+          responseFinishReason: 'stop',
+          latencyMs: 35,
+          inputTokens: 10,
+          outputTokens: 20,
+          totalTokens: 30,
+          confidenceScore: 0.71,
+          confidenceLevel: 'medium',
+          subjectLabel: null,
+          topicLabel: null,
+          levelLabel: null,
+          fallbackUsed: false,
+          fallbackInfo: null,
+          retrievalSnapshot: {
+            queryExpansion: [],
+            materials: [],
+            aiRuntimeMode: 'learning_engine_l3',
+            executionProvider: 'local_lora',
+            executionModel: 'local-lora-tutor-v1',
+            learningEngineUsed: true,
+            externalFallbackUsed: false,
+            modelVersionId: 'mv-local-lora',
+          },
+          errorCode: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }}
+      />,
+    );
+
+    expect(screen.getByText('Local LoRA Tutor')).toBeTruthy();
+    expect(screen.getByText('L4 Runtime')).toBeTruthy();
+    expect(screen.queryByText(/^GEMINI$/i)).toBeNull();
+  });
 });

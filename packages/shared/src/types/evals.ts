@@ -1,4 +1,4 @@
-import type { ExternalProviderKey, ProviderKey } from '../constants/providers';
+import type { ProviderKey } from '../constants/providers';
 import type { TrainingMessage } from './training';
 
 export type EvalCategory =
@@ -65,7 +65,7 @@ export interface UpdateEvalCaseInput {
 }
 
 export interface CreateEvalRunInput {
-  provider?: ExternalProviderKey;
+  provider?: ProviderKey;
   model?: string;
   modelVersionId?: string;
   evalCaseIds?: string[];

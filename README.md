@@ -1,6 +1,6 @@
 # Chatbot AI — Vietnamese AI Study Assistant
 
-A production-minded fullstack AI learning workspace for Vietnamese students, featuring realtime chat, study artifacts, contextual learning support, AI provider diagnostics, an internal AI Level 3 learning engine, and a Low Level 4-ready Local LoRA runtime.
+A production-minded fullstack AI learning workspace for Vietnamese students, featuring realtime chat, study artifacts, contextual learning support, AI provider diagnostics, an internal AI Level 3 learning engine, and a Low Level 4 Local LoRA runtime that has now been validated with a trained local adapter on a tiny synthetic dev dataset.
 
 This is not a basic API-wrapper chatbot. The project includes a complete AI learning platform layer: dataset management, evaluation harness, model registry, fine-tune-ready adapters, internal tutor runtime, and local LoRA integration path.
 
@@ -34,8 +34,8 @@ This is not a basic API-wrapper chatbot. The project includes a complete AI lear
 | Evaluation harness | Complete |
 | Model registry | Complete |
 | Fine-tune-ready adapter layer | Complete |
-| Low Level 4 Local LoRA integration | Integration-ready |
-| Real trained LoRA adapter | Not committed / must be trained locally |
+| Low Level 4 Local LoRA integration | Real runtime validated on tiny synthetic dev data |
+| Real trained LoRA adapter | Validated locally, not committed, not a quality claim |
 | Production deployment | Not finalized |
 
 ---
@@ -189,7 +189,7 @@ Approved TrainingExamples
 → active ModelVersion
 → ChatService
 
-This is a Low Level 4-ready integration. A real trained model should only be claimed after a real LoRA adapter is trained, served, registered, activated, and validated.
+This path is now validated with a real locally trained LoRA adapter served through the backend Local LoRA provider. It is still not a full Level 4 claim because the current adapter was trained on a tiny synthetic dev dataset and benchmark quality remains weak.
 
 Tech Stack
 Frontend

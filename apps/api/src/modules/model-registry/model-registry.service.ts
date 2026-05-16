@@ -144,14 +144,17 @@ export class ModelRegistryService {
   async getActiveLearningEngineModel(): Promise<ModelVersion | null> {
     await this.ensureDefaultInternalTutorVersion();
     const versions = await this.repository.listVersions();
+    const activeLearningEngineVersions = versions.filter(
+      (version) =>
+        version.isActive &&
+        version.status === 'ready' &&
+        typeof (version.metadata as Record<string, unknown> | null)?.runtimeMode === 'string' &&
+        (version.metadata as Record<string, unknown>).runtimeMode === 'learning_engine_l3',
+    );
     const active =
-      versions.find(
-        (version) =>
-          version.isActive &&
-          version.status === 'ready' &&
-          typeof (version.metadata as Record<string, unknown> | null)?.runtimeMode === 'string' &&
-          (version.metadata as Record<string, unknown>).runtimeMode === 'learning_engine_l3',
-      ) ?? null;
+      activeLearningEngineVersions.find((version) => version.provider !== 'internal_l3_tutor') ??
+      activeLearningEngineVersions[0] ??
+      null;
     return active ? toSharedModelVersion(active) : null;
   }
 

@@ -111,4 +111,53 @@ describe('ModelRegistryService', () => {
     expect(version?.provider).toBe('internal_l3_tutor');
     expect(version?.baseModel).toBe(env.L3_INTERNAL_MODEL_NAME);
   });
+
+  it('prefers an active ready Local LoRA override over the default internal tutor', async () => {
+    const repository = {
+      findActiveByProviders: vi.fn().mockResolvedValue({
+        id: 'internal-l3-version',
+        name: 'Internal L3 Tutor',
+        provider: 'internal_l3_tutor',
+        baseModel: env.L3_INTERNAL_MODEL_NAME,
+        fineTunedModel: null,
+        status: 'ready',
+        isActive: true,
+        metadata: { runtimeMode: 'learning_engine_l3' },
+        createdAt: new Date('2026-05-13T00:00:00.000Z'),
+        updatedAt: new Date('2026-05-13T00:00:00.000Z'),
+      }),
+      listVersions: vi.fn().mockResolvedValue([
+        {
+          id: 'internal-l3-version',
+          name: 'Internal L3 Tutor',
+          provider: 'internal_l3_tutor',
+          baseModel: env.L3_INTERNAL_MODEL_NAME,
+          fineTunedModel: null,
+          status: 'ready',
+          isActive: true,
+          metadata: { runtimeMode: 'learning_engine_l3' },
+          createdAt: new Date('2026-05-13T00:00:00.000Z'),
+          updatedAt: new Date('2026-05-13T00:00:00.000Z'),
+        },
+        {
+          id: 'local-lora-version',
+          name: 'Local LoRA Tutor v1',
+          provider: 'local_lora',
+          baseModel: 'local-lora-base',
+          fineTunedModel: 'local-lora-tutor-v1',
+          status: 'ready',
+          isActive: true,
+          metadata: { runtimeMode: 'learning_engine_l3' },
+          createdAt: new Date('2026-05-15T00:00:00.000Z'),
+          updatedAt: new Date('2026-05-15T00:00:00.000Z'),
+        },
+      ]),
+    };
+
+    const service = new ModelRegistryService(repository as never);
+    const version = await service.getActiveLearningEngineModel();
+
+    expect(version?.provider).toBe('local_lora');
+    expect(version?.fineTunedModel).toBe('local-lora-tutor-v1');
+  });
 });

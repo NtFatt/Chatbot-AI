@@ -72,25 +72,29 @@ export class AiRuntimeRouterService {
   private compactMessages(input: {
     contextSummary?: string | null;
     messages: ChatMessage[];
+    maxMessages?: number;
+    maxPromptChars?: number;
+    contextSummaryMaxChars?: number;
+    messageMaxChars?: number;
   }): AIConversationMessage[] {
     const selected = input.messages
       .filter((message) => message.senderType !== 'system' && message.status !== 'failed')
-      .slice(-env.AI_MAX_CONTEXT_MESSAGES)
+      .slice(-(input.maxMessages ?? env.AI_MAX_CONTEXT_MESSAGES))
       .map((message) => ({
         role: message.senderType === 'assistant' ? 'assistant' : 'user',
-        content: message.content,
+        content: truncateText(message.content, input.messageMaxChars ?? message.content.length),
       })) satisfies AIConversationMessage[];
 
     if (input.contextSummary) {
       selected.unshift({
         role: 'assistant',
-        content: `Conversation summary:\n${truncateText(input.contextSummary, 500)}`,
+        content: `Conversation summary:\n${truncateText(input.contextSummary, input.contextSummaryMaxChars ?? 500)}`,
       });
     }
 
     while (
       selected.reduce((total, message) => total + message.content.length, 0) >
-        env.AI_MAX_PROMPT_CHARS &&
+        (input.maxPromptChars ?? env.AI_MAX_PROMPT_CHARS) &&
       selected.length > 4
     ) {
       selected.shift();
@@ -113,20 +117,33 @@ export class AiRuntimeRouterService {
       // ModelGatewayService will use local_lora client which implements generate()
     }
 
+    const compactedMessages =
+      runtimeProvider === 'local_lora'
+        ? this.compactMessages({
+            contextSummary: input.contextSummary,
+            messages: input.messages,
+            maxMessages: 4,
+            maxPromptChars: 2_500,
+            contextSummaryMaxChars: 250,
+            messageMaxChars: 500,
+          })
+        : this.compactMessages({
+            contextSummary: input.contextSummary,
+            messages: input.messages,
+          });
+
     const response = await this.modelGateway.generateSingle({
-      provider: runtimeProvider,
-      model: activeModel.fineTunedModel ?? activeModel.baseModel,
-      userId: input.userId,
-      sessionId: input.sessionId,
-      systemPrompt: buildStudySystemPrompt({
+        provider: runtimeProvider,
+        model: activeModel.fineTunedModel ?? activeModel.baseModel,
+        modelVersionId: activeModel.id,
+        userId: input.userId,
+        sessionId: input.sessionId,
+        systemPrompt: buildStudySystemPrompt({
         language: input.language,
         subjectHint: input.subjectHint ?? input.retrievalSnapshot?.inferredSubject ?? null,
         retrievalContext: input.retrievalPromptContext ?? null,
       }),
-      messages: this.compactMessages({
-        contextSummary: input.contextSummary,
-        messages: input.messages,
-      }),
+      messages: compactedMessages,
     });
 
     const sanitized = sanitizeAIResponse(response.text);

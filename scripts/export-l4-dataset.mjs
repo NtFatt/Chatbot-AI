@@ -48,10 +48,10 @@ export function parseCliArgs(args) {
   };
 }
 
-const normalizeText = (value) =>
+export const normalizeText = (value) =>
   typeof value === 'string' ? value.replace(/\u0000/g, '').trim() : '';
 
-const normalizeRole = (role) => {
+export const normalizeRole = (role) => {
   if (role === 'assistant' || role === 'model') {
     return 'assistant';
   }
@@ -153,7 +153,7 @@ export async function runExport(argv = process.argv.slice(2), prisma = new Prism
   }
 
   const examples = await prisma.trainingExample.findMany({
-    where: { datasetId: options.datasetId, status: 'APPROVED' },
+    where: { datasetId: options.datasetId, status: 'approved' },
     orderBy: { createdAt: 'asc' },
   });
 

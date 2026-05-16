@@ -1,5 +1,6 @@
 import type { ProviderKey } from '@chatbot-ai/shared';
 
+import { env } from '../../config/env';
 import { UsageService } from '../../modules/usage/usage.service';
 import { ProvidersService } from '../../modules/providers/providers.service';
 import { AppError } from '../../utils/errors';
@@ -33,6 +34,7 @@ export class ModelGatewayService {
   async generateSingle(input: {
     provider: ProviderKey;
     model?: string;
+    modelVersionId?: string | null;
     temperature?: number;
     timeoutMs?: number;
     userId?: string;
@@ -41,8 +43,17 @@ export class ModelGatewayService {
     systemPrompt: string;
     messages: AIConversationMessage[];
   }): Promise<ModelGatewayResponse> {
-    const providersState = await this.providersService.listProviders();
-    const providerState = providersState.providers.find((item) => item.key === input.provider);
+    const providerState =
+      input.provider === 'local_lora'
+        ? {
+            key: 'local_lora' as const,
+            enabled: env.LOCAL_LORA_ENABLED,
+            configured: true,
+            model: input.model ?? env.LOCAL_LORA_MODEL,
+            modelVersionId: input.modelVersionId ?? null,
+            timeoutMs: env.LOCAL_LORA_TIMEOUT_MS,
+          }
+        : (await this.providersService.listProviders()).providers.find((item) => item.key === input.provider);
 
     if (!providerState || !providerState.enabled || !providerState.configured) {
       throw new AppError(503, 'MODEL_PROVIDER_UNAVAILABLE', 'Requested model provider is not available.');
@@ -94,7 +105,7 @@ export class ModelGatewayService {
       return {
         provider: input.provider,
         model,
-        modelVersionId: providerState.modelVersionId ?? null,
+        modelVersionId: input.modelVersionId ?? providerState.modelVersionId ?? null,
         providerRequestId: response.providerRequestId,
         text: response.text,
         finishReason: response.finishReason,
