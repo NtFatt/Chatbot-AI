@@ -27,6 +27,11 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("--dataset-name", type=str, help="Optional dataset display name for metadata")
     parser.add_argument("--dataset-id", type=str, help="Optional dataset id for metadata")
     parser.add_argument(
+        "--targeted-failure-modes",
+        type=str,
+        help="Optional comma-separated failure modes that this dataset targets",
+    )
+    parser.add_argument(
         "--notes",
         type=str,
         default="LoRA SFT fine-tuning run. This is adapter training, not full model training from scratch.",
@@ -189,6 +194,7 @@ def build_training_metadata(
     dataset_id: Optional[str],
     training_example_count: int,
     validation_example_count: int,
+    targeted_failure_modes: Optional[List[str]],
     is_mock_training: bool,
     device: str,
     cuda_available: bool,
@@ -210,6 +216,7 @@ def build_training_metadata(
         "validationPath": validation_path,
         "trainingExampleCount": training_example_count,
         "validationExampleCount": validation_example_count,
+        "targetedFailureModes": targeted_failure_modes or [],
         "epochs": config.get("num_train_epochs", 1),
         "learningRate": float(config.get("learning_rate", 2e-4)),
         "loraRank": config.get("lora_r", 16),
@@ -262,6 +269,7 @@ def run_mock_training(args: argparse.Namespace, config: Dict[str, Any]) -> Dict[
         dataset_id=args.dataset_id,
         training_example_count=count_jsonl_rows(args.dataset),
         validation_example_count=count_jsonl_rows(args.validation),
+        targeted_failure_modes=[item.strip() for item in (args.targeted_failure_modes or "").split(",") if item.strip()],
         is_mock_training=True,
         device="mock",
         cuda_available=False,
@@ -420,6 +428,7 @@ def main() -> None:
         dataset_id=args.dataset_id,
         training_example_count=training_example_count,
         validation_example_count=validation_example_count,
+        targeted_failure_modes=[item.strip() for item in (args.targeted_failure_modes or "").split(",") if item.strip()],
         is_mock_training=False,
         device=str(device_state["device"]),
         cuda_available=bool(device_state["cudaAvailable"]),

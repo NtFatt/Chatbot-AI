@@ -1,21 +1,17 @@
-# Chatbot AI — Vietnamese AI Study Assistant
+# Chatbot AI - Vietnamese AI Study Assistant
 
-A production-minded fullstack AI learning workspace for Vietnamese students, featuring realtime chat, study artifacts, contextual learning support, AI provider diagnostics, an internal AI Level 3 learning engine, and a Low Level 4 Local LoRA runtime that has now been retrained and benchmarked on a curated 300-example Vietnamese tutor dataset.
+A production-minded fullstack AI learning workspace for Vietnamese students, featuring realtime chat, study artifacts, contextual learning support, AI provider diagnostics, an internal AI Level 3 learning engine, and a Low Level 4 Local LoRA runtime that has now completed a targeted Phase 9 retraining cycle.
 
-This is not a basic API-wrapper chatbot. The project includes a complete AI learning platform layer: dataset management, evaluation harness, model registry, fine-tune-ready adapters, internal tutor runtime, and local LoRA integration path.
-
----
+This is not a basic API-wrapper chatbot. The project includes a dataset manager, evaluation harness, model registry, fine-tune-ready adapter layer, internal tutor runtime, and a real local LoRA integration path with honest quality and latency reporting.
 
 ## Highlights
 
-- Fullstack AI study assistant built with **React, TypeScript, Express, PostgreSQL, Prisma, Socket.IO, and TanStack Query**.
-- Realtime chat with optimistic UI, reconnect handling, retry flow, HTTP fallback, and provider metadata.
-- Study artifact system: summaries, flashcards, quizzes, notes, artifact editing, refinement, review mode, favorites, sharing, and cross-session search.
-- AI Level 3 architecture with dataset manager, evaluation harness, model registry, fine-tune-ready adapter layer, and internal tutor runtime.
-- Low Level 4-ready local model path with dataset export, LoRA/SFT training scripts, mock/real local inference server, `LocalLoraProvider`, and model registry activation flow.
-- Production-minded validation: Prisma migrations, lint, typecheck, unit/component tests, Playwright E2E, build checks, and AI runtime diagnostics.
-
----
+- Fullstack AI study assistant built with React, TypeScript, Express, PostgreSQL, Prisma, Socket.IO, and TanStack Query
+- Realtime chat with optimistic UI, reconnect handling, retry flow, HTTP fallback, and provider metadata
+- Study artifact system with summaries, flashcards, quizzes, notes, editing, refinement, review mode, favorites, sharing, and cross-session search
+- AI Level 3 architecture with dataset manager, evaluation harness, model registry, fine-tune-ready adapter layer, and internal tutor runtime
+- Low Level 4 local model path with HF chat export, LoRA/SFT training scripts, mock/real local inference server, `LocalLoraProvider`, and model registry activation flow
+- Production-minded validation with Prisma migrations, lint, typecheck, unit/component tests, Playwright E2E, build checks, and AI runtime diagnostics
 
 ## Project Status
 
@@ -24,406 +20,206 @@ This is not a basic API-wrapper chatbot. The project includes a complete AI lear
 | Fullstack app | Complete |
 | Realtime chat + HTTP fallback | Complete |
 | Study artifacts | Complete |
-| Artifact refinement / review mode | Complete |
-| Global message search | Complete |
-| Cross-session artifact search | Complete |
-| AI provider diagnostics | Complete |
 | AI Level 3 learning engine | Complete |
 | Internal L3 tutor runtime | Complete |
 | Dataset manager | Complete |
 | Evaluation harness | Complete |
 | Model registry | Complete |
 | Fine-tune-ready adapter layer | Complete |
-| Low Level 4 Local LoRA integration | Real v3 runtime validated on curated dev-safe tutor data |
-| Real trained LoRA adapter | Retrained locally with LoRA on v3, still not a full Level 4 or production-quality claim |
+| Low Level 4 Local LoRA integration | Real v4 runtime validated on targeted dev-safe tutor data |
+| Real trained LoRA adapter | Retrained locally through v4, still not a full Level 4 or production-quality claim |
 | Production deployment | Not finalized |
 
----
+## AI Runtime Layers
 
-## Core Features
+The project supports multiple AI runtime paths:
 
-### Study Workspace
-
-- Guest login
-- Session create / rename / delete
-- Pin and archive sessions
-- Batch session actions
-- Continue-learning entry points
-- Global message search
-- Responsive dashboard
-- Dark mode
-- Realtime status and HTTP fallback indicator
-
-### Realtime Chat
-
-- Socket.IO realtime messaging
-- Optimistic user messages
-- Streaming assistant responses
-- Message retry
-- Reconnect recovery
-- HTTP fallback when socket transport is unavailable
-- Provider, model, latency, confidence, and fallback metadata
-
-### Study Artifacts
-
-Supported artifact types:
-
-- Summary
-- Flashcard set
-- Quiz set
-- Note
-
-Artifact capabilities:
-
-- Generate from assistant responses
-- Edit artifact content
-- Refine generated artifacts
-- Review quizzes
-- Track review history
-- Favorite artifacts
-- Search artifacts across sessions
-- Share and export artifacts
-
-### Learning Materials
-
-- Contextual material recommendation
-- Subject/topic-aware ranking
-- Retrieval snapshot per assistant response
-- Recent source visibility
-- Source cards in the study workspace
-
----
-
-## AI Architecture
-
-The project supports multiple AI runtime layers.
-
-```txt
-User Message
-→ ChatService
-→ AiRuntimeRouterService
-→ Runtime Mode
-   ├─ External AI API
-   │  └─ AIOrchestratorService → Gemini/OpenAI
-   │
-   └─ AI học tập Level 3
-      ├─ Active ModelVersion through ModelGateway
-      ├─ InternalL3TutorModelService
-      └─ Local study fallback
+- `API AI lớn`: backend-routed Gemini/OpenAI providers
+- `AI học tập Level 3`: internal tutor runtime with optional Local LoRA activation
+- `Internal L3 Tutor`: safe fallback when the Local LoRA path is unavailable or unsuitable
 
 The frontend never calls Gemini/OpenAI directly. All AI calls go through the backend routing layer.
 
-AI Runtime Modes
+## Local LoRA Reality
 
-Each chat session can use its own runtime mode.
+Implemented Local LoRA pieces:
 
-1. External AI API
+- `ml/` workspace for HF dataset export, validation, training, and serving
+- mock/real FastAPI local inference server
+- backend `LocalLoraProvider`
+- model registry integration
+- model gateway routing
+- fallback from Local LoRA to Internal L3 Tutor
 
-Uses configured large AI providers through the backend orchestrator.
+Current benchmark reality:
 
-Typical providers:
+- historical `local_lora v1` score: `0.03`
+- historical `local_lora v2` score: `0.21`
+- Phase 8 `local_lora v3` score on the older suite: `0.21`
+- Phase 9 `local_lora v3` score on the stronger suite: `0.07`
+- Phase 9 `local_lora v4` score on the stronger suite: `0.06`
+- Phase 9 `internal_l3_tutor` score on the stronger suite: `0.32`
+- Phase 9 `local_lora v4` average latency: `7355 ms`
+- Phase 9 `local_lora v4` timeout count: `0`
 
-Gemini
-OpenAI
+This means the local runtime path is real and stable, but it still does not justify a full Level 4 or production-grade quality claim.
 
-Runtime path:
+## Repository Structure
 
-ChatService
-→ AiRuntimeRouterService
-→ AIOrchestratorService
-→ Gemini/OpenAI
-
-This mode is used when the user wants responses from external AI providers.
-
-2. AI học tập Level 3
-
-Uses the app-owned Level 3 learning engine.
-
-Default internal provider:
-
-internal_l3_tutor
-
-Default internal model name:
-
-internal-l3-tutor-v1
-
-Runtime path:
-
-ChatService
-→ AiRuntimeRouterService
-→ active ready ModelVersion if available
-→ InternalL3TutorModelService
-→ local study fallback
-
-Important:
-
-Level 3 does not call Gemini/OpenAI by default.
-External fallback is opt-in only.
-Level 3 is not a trained-from-scratch LLM.
-Level 3 is an app-owned tutor runtime built around tutor policy, retrieval context, structured study behavior, and model-registry wiring.
-Low Level 4 Local LoRA Runtime
-
-The project includes a Low Level 4-ready local fine-tuning path.
-
-Implemented pieces:
-
-ml/ workspace
-Hugging Face chat JSONL dataset export
-LoRA/SFT training script
-Dataset validation script
-Mock/real FastAPI local inference server
-Backend LocalLoraProvider
-Model registry integration
-Model gateway routing
-Fallback from Local LoRA to Internal L3 Tutor
-
-Target runtime path:
-
-Approved TrainingExamples
-→ HF chat JSONL export
-→ LoRA/SFT training
-→ local adapter
-→ local inference server
-→ LocalLoraProvider
-→ ModelGateway
-→ active ModelVersion
-→ ChatService
-
-This path is now validated with a real locally retrained LoRA adapter served through the backend Local LoRA provider. It is still not a full Level 4 claim because the current v3 adapter only matched the historical v2 benchmark score (`0.21`) even though latency improved materially to about `7.5s` average in the Phase 8 benchmark.
-
-Tech Stack
-Frontend
-React
-Vite
-TypeScript
-Tailwind CSS
-TanStack Query
-Zustand
-Socket.IO client
-Framer Motion
-Sonner
-React Markdown
-Rehype sanitize
-Backend
-Node.js
-Express
-TypeScript
-Socket.IO
-Prisma
-PostgreSQL
-Zod
-JWT auth
-Gemini/OpenAI provider adapters
-Internal Level 3 tutor runtime
-Local LoRA provider integration
-ML / Local Model Layer
-Python
-Hugging Face Transformers
-PEFT
-TRL
-FastAPI
-Uvicorn
-LoRA/SFT training scaffold
-Repository Structure
+```txt
 apps/
   api/
-    src/
-      config/
-      integrations/
-        ai/
-      middlewares/
-      modules/
-        auth/
-        chat/
-        artifacts/
-        materials/
-        providers/
-        training/
-        evals/
-        model-registry/
-      sockets/
-      utils/
-    test/
-
   web/
-    src/
-      app/
-      components/
-      features/
-        auth/
-        dashboard/
-        ai-lab/
-        public/
-      hooks/
-      services/
-      store/
-      styles/
-      utils/
-    test/
-
 packages/
   shared/
-    src/
-      constants/
-      prompts/
-      schemas/
-      types/
-
 prisma/
-  migrations/
-  schema.prisma
-  seed.ts
-
 ml/
-  configs/
-  scripts/
-  datasets/
-  outputs/
-  adapters/
-
 docs/
-  AI_LEVEL_3_RUNTIME_NOTES.md
-  LOW_LEVEL_4_LOCAL_LORA.md
-  PROJECT_PROGRESS_CHECKLIST.md
-  REAL_AI_SETUP.md
-  RUNTIME_RUNBOOK.md
-
 scripts/
 tests/
 infra/
-Environment Requirements
+```
+
+## Environment Requirements
 
 Required:
 
-Node.js 22+
-pnpm 10+
-PostgreSQL
-Python 3.10+ for Local LoRA scripts
+- Node.js 22+
+- pnpm 10+
+- PostgreSQL
+- Python 3.10+ for Local LoRA scripts
 
 Optional:
 
-Docker Desktop
-Gemini API key
-OpenAI API key
-GPU or cloud notebook for real LoRA training
-Local Setup
+- Docker Desktop
+- Gemini API key
+- OpenAI API key
+- GPU or cloud notebook for real LoRA training
+
+## Local Setup
 
 Install dependencies:
 
+```powershell
 pnpm install
+```
 
 Copy environment files:
 
+```powershell
 Copy-Item ".env.example" ".env" -ErrorAction SilentlyContinue
 Copy-Item "apps\api\.env.example" "apps\api\.env" -ErrorAction SilentlyContinue
 Copy-Item "apps\web\.env.example" "apps\web\.env" -ErrorAction SilentlyContinue
+```
 
 Generate Prisma client:
 
+```powershell
 pnpm exec prisma generate --schema prisma/schema.prisma
+```
 
 Apply migrations:
 
+```powershell
 pnpm exec prisma migrate deploy --schema prisma/schema.prisma
+```
 
-Seed database if needed:
+Do not use `prisma db push` for normal development.
 
-pnpm db:seed
+## AI Runtime Config
 
-Do not use prisma db push for normal development. Use migrations.
+Default Level 3 config:
 
-Real AI Setup
-
-Edit:
-
-apps/api/.env
-
-Add at least one provider key:
-
-GEMINI_API_KEY=your_real_gemini_key
-OPENAI_API_KEY=your_real_openai_key
-
-Recommended local/demo config:
-
-GEMINI_ENABLED=true
-OPENAI_ENABLED=true
-AI_PRIMARY_PROVIDER=GEMINI
-AI_FALLBACK_PROVIDER=OPENAI
-AI_LOCAL_FALLBACK_ENABLED=true
-AI_STARTUP_STRICT=false
-
-Check provider readiness:
-
-pnpm ai:doctor
-
-Expected:
-
-Runtime AI mode: real
-At least one provider configured
-AI Level 3 Config
-
-Default config:
-
+```env
 L3_ALLOW_EXTERNAL_FALLBACK=false
 L3_INTERNAL_MODEL_NAME=internal-l3-tutor-v1
+```
 
-Meaning:
+Local LoRA config:
 
-learning_engine_l3 uses the internal tutor by default.
-Gemini/OpenAI are not called in Level 3 mode unless external fallback is explicitly enabled.
-External API mode still uses Gemini/OpenAI normally.
-Low Level 4 Local LoRA Config
-
-Enable Local LoRA provider:
-
+```env
 LOCAL_LORA_ENABLED=true
 LOCAL_LORA_BASE_URL=http://localhost:8008
-LOCAL_LORA_MODEL=local-lora-tutor-v3
+LOCAL_LORA_MODEL=local-lora-tutor-v4
 LOCAL_LORA_TIMEOUT_MS=30000
 LOCAL_LORA_MAX_NEW_TOKENS=64
 LOCAL_LORA_TEMPERATURE=0.2
 LOCAL_LORA_TOP_P=0.9
 LOCAL_LORA_CONTEXT_MAX_CHARS=6000
+```
 
-Start the mock/real local inference server:
+Check provider and runtime readiness:
 
-python ml/scripts/serve_local_lora.py --mock
+```powershell
+pnpm ai:doctor
+```
 
-or:
+## Run The Stack
 
-python ml/scripts/serve_local_lora.py
-
-Check server health:
-
-Invoke-RestMethod http://localhost:8008/health
-Run Development Stack
-
-Run API:
-
+```powershell
 pnpm dev:api
-
-Run Web:
-
 pnpm dev:web
-
-Or run the full stack if supported:
-
-pnpm dev
+```
 
 Typical local URLs:
 
-API: http://localhost:4000
-Web: http://localhost:5173
+- API: [http://localhost:4000](http://localhost:4000)
+- Web: [http://localhost:5173](http://localhost:5173)
 
-Health check:
+## Local LoRA Workflow
 
-Invoke-RestMethod http://localhost:4000/health
-Validation
+Seed targeted v4 data:
 
-Run full validation:
+```powershell
+node scripts/seed-l4-curated-training-data.mjs --version v4
+```
 
+Audit quality:
+
+```powershell
+node scripts/audit-l4-dataset-quality.mjs --version v4
+```
+
+Export:
+
+```powershell
+node scripts/export-l4-dataset.mjs `
+  --dataset-id <DEV_TARGETED_L4_TUTOR_V4_DATASET_ID> `
+  --out ml/datasets/local-lora-tutor-v4/train.jsonl `
+  --validation-out ml/datasets/local-lora-tutor-v4/val.jsonl `
+  --validation-ratio 0.1
+```
+
+Train:
+
+```powershell
+.\.venv-l4\Scripts\python.exe ml/scripts/train_lora_sft.py `
+  --config ml/configs/l4-low-sft.yaml `
+  --dataset ml/datasets/local-lora-tutor-v4/train.jsonl `
+  --validation ml/datasets/local-lora-tutor-v4/val.jsonl `
+  --output ml/adapters/local-lora-tutor-v4 `
+  --dataset-name "DEV Targeted L4 Tutor v4" `
+  --dataset-id <DEV_TARGETED_L4_TUTOR_V4_DATASET_ID>
+```
+
+Serve:
+
+```powershell
+.\.venv-l4\Scripts\python.exe ml/scripts/serve_local_lora.py --adapter ml/adapters/local-lora-tutor-v4 --model local-lora-tutor-v4
+```
+
+Register:
+
+```powershell
+node scripts/register-local-lora-model.mjs --real --model local-lora-tutor-v4 --adapter ml/adapters/local-lora-tutor-v4
+```
+
+## Validation
+
+```powershell
 pnpm exec prisma validate --schema prisma/schema.prisma
 pnpm exec prisma migrate status --schema prisma/schema.prisma
+pnpm exec prisma migrate deploy --schema prisma/schema.prisma
 pnpm exec prisma generate --schema prisma/schema.prisma
 
 pnpm lint
@@ -432,98 +228,31 @@ pnpm test
 pnpm build
 pnpm test:e2e
 pnpm ai:doctor
+```
 
-Python script checks:
+Python validation:
 
-python -m py_compile ml/scripts/train_lora_sft.py
-python -m py_compile ml/scripts/serve_local_lora.py
-python -m py_compile ml/scripts/validate_dataset.py
-Manual Smoke Test
-External API Mode
-Start API and Web.
-Login as guest.
-Create or select a session.
-Set mode to API AI lớn.
-Ask a study question.
-Confirm the response badge shows Gemini/OpenAI.
-AI Level 3 Mode
-Open Workspace Settings.
-Set mode to AI học tập Level 3.
-Ask a Vietnamese study question.
-Confirm the badge shows AI học tập Level 3 or L3 Tutor Model.
-Confirm it does not show Gemini/OpenAI unless external fallback is explicitly enabled.
-Low Level 4 Local LoRA
-Start the Local LoRA server.
-Enable LOCAL_LORA_ENABLED=true.
-Register and activate a local_lora model version.
-Ask a question in Level 3 mode.
-Confirm the badge shows Local LoRA Tutor or Low L4 Tutor.
-Stop the local server.
-Ask again.
-Confirm fallback to Internal L3 Tutor.
-Useful API Endpoints
-POST   /api/auth/login
-POST   /api/auth/refresh
-POST   /api/auth/logout
-GET    /api/auth/me
+```powershell
+.\.venv-l4\Scripts\python.exe -m py_compile ml/scripts/train_lora_sft.py
+.\.venv-l4\Scripts\python.exe -m py_compile ml/scripts/serve_local_lora.py
+.\.venv-l4\Scripts\python.exe -m py_compile ml/scripts/validate_dataset.py
+.\.venv-l4\Scripts\python.exe -m py_compile ml/scripts/check_l4_environment.py
+.\.venv-l4\Scripts\python.exe -m unittest discover ml/tests
+```
 
-GET    /api/chat/sessions
-POST   /api/chat/sessions
-PATCH  /api/chat/sessions/:id
-DELETE /api/chat/sessions/:id
-GET    /api/chat/sessions/:id/messages
-POST   /api/chat/ask
+## Safety
 
-GET    /api/materials/search
-GET    /api/materials/recommend
+- Do not commit `.env`, API keys, exported JSONL, adapters, weights, or generated outputs
+- Keep `Internal L3 Tutor` fallback intact
+- Keep `API AI lớn` / external provider mode intact
+- Do not claim trained-from-scratch model development
+- Do not claim production-grade local AI quality
+- Do not claim a full Level 4 milestone from the current results
 
-GET    /api/artifacts
-POST   /api/artifacts/generate
-PATCH  /api/artifacts/:id/content
-PATCH  /api/artifacts/:id/refine
-POST   /api/artifacts/:id/review-events
-GET    /api/artifacts/:id/review-history
+Safe CV wording after Phase 9:
 
-GET    /api/providers
-POST   /api/providers/test
-GET    /api/providers/metrics
-GET    /api/providers/incidents
+`Improved the Local LoRA pipeline through targeted eval-failure analysis, prompt-shape tuning, and retraining a focused Vietnamese tutor adapter, with CUDA serving, fallback validation, and transparent benchmark reporting.`
 
-GET    /health
-Security Notes
-Frontend never calls Gemini/OpenAI directly.
-API keys stay in backend environment files only.
-JWT access tokens are short-lived.
-Refresh tokens are hashed in the database.
-Authorization headers are redacted in logs.
-Request IDs are included in logs and error responses.
-User input is validated with Zod.
-Markdown output is sanitized on the frontend.
-Rate limiting is applied to sensitive routes.
-Model weights, adapters, datasets, and API keys should not be committed.
-Known Limitations
-Low Level 4 is integration-ready unless a real LoRA adapter is trained and served.
-Realtime transport may fall back to HTTP in the normal dev stack.
-Direct node apps/api/dist/server.js from repo root is not the standard runtime path.
-Production deployment is not finalized.
-Local LoRA training requires suitable hardware or a cloud notebook/runtime.
-CV Value
-
-This project demonstrates:
-
-Fullstack TypeScript engineering
-Realtime chat architecture
-AI provider orchestration
-Secure backend-only AI routing
-RAG-style retrieval context
-Study artifact generation and review
-Dataset manager
-Evaluation harness
-Model registry
-Fine-tune-ready AI platform design
-Internal AI runtime mode
-Low Level 4 Local LoRA integration
-Production-minded testing and validation
-License
+## License
 
 Personal educational / portfolio project.

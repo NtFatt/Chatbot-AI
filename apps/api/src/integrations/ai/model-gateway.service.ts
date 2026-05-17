@@ -4,7 +4,7 @@ import { env } from '../../config/env';
 import { UsageService } from '../../modules/usage/usage.service';
 import { ProvidersService } from '../../modules/providers/providers.service';
 import { AppError } from '../../utils/errors';
-import type { AIConversationMessage, AIProvider } from './ai.types';
+import type { AIConversationMessage, AIProvider, LocalLoraTaskCategory } from './ai.types';
 import { ProviderHealthService } from './provider-health.service';
 import { classifyProviderError } from './provider-runtime';
 
@@ -39,6 +39,7 @@ export class ModelGatewayService {
     topP?: number;
     maxNewTokens?: number;
     contextMaxChars?: number;
+    taskCategory?: LocalLoraTaskCategory | null;
     timeoutMs?: number;
     userId?: string;
     sessionId?: string | null;
@@ -89,6 +90,7 @@ export class ModelGatewayService {
         topP: input.topP,
         maxNewTokens: input.maxNewTokens,
         contextMaxChars: input.contextMaxChars,
+        taskCategory: input.taskCategory,
       });
 
       this.providerHealthService.recordSuccess(input.provider);

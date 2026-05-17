@@ -15,6 +15,7 @@ import type { ModelRegistryService } from '../../modules/model-registry/model-re
 import { truncateText } from '../../utils/text';
 import { AIOrchestratorService } from './ai-orchestrator.service';
 import { InternalL3TutorModelService } from './internal-l3-tutor-model.service';
+import { detectLocalLoraTaskCategory } from './local-lora.provider';
 import { buildLocalStudyFallback } from './local-study-fallback';
 import { ModelGatewayService } from './model-gateway.service';
 import { sanitizeAIResponse, isRenderableAIResponse } from './response-sanitizer';
@@ -51,6 +52,11 @@ const mapModelVersionProviderToRuntimeProvider = (
     default:
       return null;
   }
+};
+
+const inferLocalTaskCategoryFromMessages = (messages: AIConversationMessage[]) => {
+  const latestUserPrompt = [...messages].reverse().find((message) => message.role === 'user')?.content ?? '';
+  return detectLocalLoraTaskCategory(latestUserPrompt);
 };
 
 export class AiRuntimeRouterService {
@@ -122,10 +128,10 @@ export class AiRuntimeRouterService {
         ? this.compactMessages({
             contextSummary: input.contextSummary,
             messages: input.messages,
-            maxMessages: 4,
-            maxPromptChars: 2_500,
-            contextSummaryMaxChars: 250,
-            messageMaxChars: 500,
+            maxMessages: 3,
+            maxPromptChars: 1_800,
+            contextSummaryMaxChars: 180,
+            messageMaxChars: 420,
           })
         : this.compactMessages({
             contextSummary: input.contextSummary,
@@ -133,17 +139,18 @@ export class AiRuntimeRouterService {
           });
 
     const response = await this.modelGateway.generateSingle({
-        provider: runtimeProvider,
-        model: activeModel.fineTunedModel ?? activeModel.baseModel,
-        modelVersionId: activeModel.id,
-        userId: input.userId,
-        sessionId: input.sessionId,
-        systemPrompt: buildStudySystemPrompt({
+      provider: runtimeProvider,
+      model: activeModel.fineTunedModel ?? activeModel.baseModel,
+      modelVersionId: activeModel.id,
+      userId: input.userId,
+      sessionId: input.sessionId,
+      systemPrompt: buildStudySystemPrompt({
         language: input.language,
         subjectHint: input.subjectHint ?? input.retrievalSnapshot?.inferredSubject ?? null,
         retrievalContext: input.retrievalPromptContext ?? null,
       }),
       messages: compactedMessages,
+      taskCategory: runtimeProvider === 'local_lora' ? inferLocalTaskCategoryFromMessages(compactedMessages) : undefined,
     });
 
     const sanitized = sanitizeAIResponse(response.text);

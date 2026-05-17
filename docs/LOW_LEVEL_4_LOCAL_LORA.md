@@ -1,101 +1,125 @@
 # Low Level 4 Local LoRA
 
-## Current status
+## Current Status
 
-This repository now validates a **real Local LoRA v3 retraining and runtime path** on laptop GPU hardware, but it still does **not** justify a full Level 4 or production-grade local AI claim.
+This repository now validates a real Local LoRA v4 retraining and runtime path on laptop GPU hardware, but it still does not justify a full Level 4 or production-grade local AI claim.
 
 Validated on 2026-05-17:
 
-- curated `DEV Curated L4 Tutor v3` dataset seeded into Postgres
-- dataset quality audit passed at `300` approved examples with `10` categories × `30` each
-- HF chat JSONL export passed at `270` train / `30` validation examples
+- failure analysis script added for recent eval runs and local-vs-internal comparison
+- stronger Phase 9 eval suite seeded at 30 synthetic Vietnamese tutor cases across 10 categories
+- targeted `DEV Targeted L4 Tutor v4` dataset seeded into Postgres
+- v4 dataset quality audit passed at 180 approved examples with 10 categories x 18 each
+- HF chat JSONL export passed at 162 train / 18 validation examples
 - JSONL validation passed for both splits
-- real LoRA retraining completed to `ml/adapters/local-lora-tutor-v3`
+- real LoRA v4 retraining completed to `ml/adapters/local-lora-tutor-v4`
 - real FastAPI serving mode ran with `mode=real`, `adapterLoaded=true`, `modelLoaded=true`, `device=cuda`
-- real model registry activation set `local-lora-tutor-v3` active for `local_lora`
+- real model registry activation set `local-lora-tutor-v4` active for `local_lora`
 - browser smoke passed for:
-  - `learning_engine_l3` → `Local LoRA Tutor / L4 Runtime / local-lora-tutor-v3`
-  - local server stop → fallback to `AI học tập Level 3 / L3 Tutor Model`
-  - `API AI lớn` → external provider badge (`GEMINI / gemini-2.5-flash`) when configured
-- persisted Phase 8 benchmark runs for:
-  - `internal_l3_tutor`
-  - `local_lora v3`
-  - configured external providers
+  - `learning_engine_l3` -> `Local LoRA Tutor / L4 Runtime / local-lora-tutor-v4`
+  - local server stop -> fallback to `AI học tập Level 3 / L3 Tutor Model`
+  - `API AI lớn` -> external provider badge when configured, with honest quota/fallback warnings when provider quota was exhausted
 
-## What is still not claimed
+## What Is Still Not Claimed
 
-This repo still does **not** claim:
+This repo still does not claim:
 
 - trained-from-scratch model development
 - production-grade local throughput
 - production-grade local quality
 - a full Level 4 milestone
 
-## Dataset evolution
+## Dataset Evolution
 
 | Dataset | Examples | Status |
 | --- | --- | --- |
 | `DEV Synthetic L4 Tutor v1` | 24 | Original pipeline validation dataset |
-| `DEV Curated L4 Tutor v2` | 100 | Curated synthetic/dev-safe, 10 categories × 10 |
-| `DEV Curated L4 Tutor v3` | 300 | Curated synthetic/dev-safe, 10 categories × 30, quality-audited |
+| `DEV Curated L4 Tutor v2` | 100 | Curated synthetic/dev-safe, 10 categories x 10 |
+| `DEV Curated L4 Tutor v3` | 300 | Curated synthetic/dev-safe, 10 categories x 30 |
+| `DEV Targeted L4 Tutor v4` | 180 | Targeted synthetic/dev-safe, focused on observed failure modes instead of blind volume growth |
 
-The v3 dataset is Vietnamese, concise, synthetic/dev-safe, and intended as a stronger retraining base for the local tutor path. Exported JSONL remains ignored and must not be committed.
+The v4 dataset is Vietnamese, concise, synthetic/dev-safe, and tuned toward actual local failure modes such as missed tasks, wrong format, weak examples, missing practice questions, and weak source-grounded behavior. Exported JSONL remains ignored and must not be committed.
 
-## Benchmark reality
+## Failure Analysis Summary
+
+Observed from the latest local v3 failure analysis on 2026-05-17:
+
+- weakest categories: `explain_concept`, `source_grounded_answer`, `generate_flashcards`, `study_plan`, `summarize_lesson`
+- top failure modes: `missed_task`, `no_practice_question`, `too_generic`, `wrong_format`, `language_mismatch`
+- local-specific issues: prompts were still too broad for a small adapter, some outputs skipped the expected example/practice-question pattern, and long context increased latency without improving answers
+
+Implemented Phase 9 fixes:
+
+- shorter local-only system prompt
+- task-specific output templates for all 10 tutor categories
+- tighter context trimming with `LOCAL_LORA_CONTEXT_MAX_CHARS`
+- explicit local generation config pass-through
+- `repetition_penalty=1.05` added on the local server
+
+## Benchmark Reality
 
 Historical comparison:
 
 - `local_lora v1` average score: `0.03`
 - `local_lora v2` average score: `0.21`
 - `local_lora v2` average latency: about `24582 ms`
+- `local_lora v3` Phase 8 average score: `0.21`
+- `local_lora v3` Phase 8 average latency: `7533 ms`
 
-Observed Phase 8 benchmark result on 2026-05-17:
+Observed Phase 9 benchmark result on the stronger 30-case suite seeded with `Phase 9 - ` on 2026-05-17:
 
-- `internal_l3_tutor` average score: `0.59`
-- `local_lora v3` average score: `0.21`
-- `local_lora v3` average latency: `7533 ms`
-- `local_lora v3` p50 latency: `7488 ms`
-- `local_lora v3` p95 latency: `7821 ms`
-- `local_lora v3` timeout count: `0`
-- `local_lora v3` error count: `0`
+- `internal_l3_tutor` average score: `0.32`
+- `local_lora v3` average score: `0.07`
+- `local_lora v3` average latency: `7611 ms`
+- `local_lora v3` p50 latency: `7495 ms`
+- `local_lora v3` p95 latency: `8603 ms`
+- `local_lora v4` average score: `0.06`
+- `local_lora v4` average latency: `7355 ms`
+- `local_lora v4` p50 latency: `7462 ms`
+- `local_lora v4` p95 latency: `8105 ms`
+- `local_lora v4` timeout count: `0`
+- `local_lora v4` fallback count: `0`
+- `local_lora v4` error count: `0`
 
 What this means:
 
-- latency improved materially versus v2
-- timeout stability improved materially versus the earlier parallel-eval failure mode
-- quality did **not** beat the historical v2 benchmark; it matched `0.21`
-- `internal_l3_tutor` still outperforms the local adapter on quality by a wide margin
+- latency stayed slightly better in v4 than v3 on the stronger suite
+- timeout stability remained intact
+- quality did not improve; v4 regressed from `0.07` to `0.06` on the stronger suite
+- `internal_l3_tutor` still clearly outperforms the local adapter on quality
 
-## Real workflow
+Phase 9 is therefore a targeted debugging and runtime-hardening cycle, not a stronger local-quality milestone.
 
-1. Seed the curated dataset:
+## Real Workflow
+
+1. Seed the targeted dataset:
 
 ```powershell
-node scripts/seed-l4-curated-training-data.mjs --version v3 --dry-run
-node scripts/seed-l4-curated-training-data.mjs --version v3
+node scripts/seed-l4-curated-training-data.mjs --version v4 --dry-run
+node scripts/seed-l4-curated-training-data.mjs --version v4
 ```
 
 2. Audit quality:
 
 ```powershell
-node scripts/audit-l4-dataset-quality.mjs --version v3
+node scripts/audit-l4-dataset-quality.mjs --version v4
 ```
 
 3. Export the HF chat JSONL split:
 
 ```powershell
 node scripts/export-l4-dataset.mjs `
-  --dataset-id <DEV_CURATED_L4_TUTOR_V3_DATASET_ID> `
-  --out ml/datasets/local-lora-tutor-v3/train.jsonl `
-  --validation-out ml/datasets/local-lora-tutor-v3/val.jsonl `
+  --dataset-id <DEV_TARGETED_L4_TUTOR_V4_DATASET_ID> `
+  --out ml/datasets/local-lora-tutor-v4/train.jsonl `
+  --validation-out ml/datasets/local-lora-tutor-v4/val.jsonl `
   --validation-ratio 0.1
 ```
 
 4. Validate both files:
 
 ```powershell
-.\.venv-l4\Scripts\python.exe ml/scripts/validate_dataset.py ml/datasets/local-lora-tutor-v3/train.jsonl
-.\.venv-l4\Scripts\python.exe ml/scripts/validate_dataset.py ml/datasets/local-lora-tutor-v3/val.jsonl
+.\.venv-l4\Scripts\python.exe ml/scripts/validate_dataset.py ml/datasets/local-lora-tutor-v4/train.jsonl
+.\.venv-l4\Scripts\python.exe ml/scripts/validate_dataset.py ml/datasets/local-lora-tutor-v4/val.jsonl
 ```
 
 5. Train the real adapter:
@@ -103,23 +127,23 @@ node scripts/export-l4-dataset.mjs `
 ```powershell
 .\.venv-l4\Scripts\python.exe ml/scripts/train_lora_sft.py `
   --config ml/configs/l4-low-sft.yaml `
-  --dataset ml/datasets/local-lora-tutor-v3/train.jsonl `
-  --validation ml/datasets/local-lora-tutor-v3/val.jsonl `
-  --output ml/adapters/local-lora-tutor-v3 `
-  --dataset-name "DEV Curated L4 Tutor v3" `
-  --dataset-id <DEV_CURATED_L4_TUTOR_V3_DATASET_ID>
+  --dataset ml/datasets/local-lora-tutor-v4/train.jsonl `
+  --validation ml/datasets/local-lora-tutor-v4/val.jsonl `
+  --output ml/adapters/local-lora-tutor-v4 `
+  --dataset-name "DEV Targeted L4 Tutor v4" `
+  --dataset-id <DEV_TARGETED_L4_TUTOR_V4_DATASET_ID>
 ```
 
 6. Serve the real adapter:
 
 ```powershell
-.\.venv-l4\Scripts\python.exe ml/scripts/serve_local_lora.py --adapter ml/adapters/local-lora-tutor-v3 --model local-lora-tutor-v3
+.\.venv-l4\Scripts\python.exe ml/scripts/serve_local_lora.py --adapter ml/adapters/local-lora-tutor-v4 --model local-lora-tutor-v4
 ```
 
 7. Register the real adapter:
 
 ```powershell
-node scripts/register-local-lora-model.mjs --real --model local-lora-tutor-v3 --adapter ml/adapters/local-lora-tutor-v3
+node scripts/register-local-lora-model.mjs --real --model local-lora-tutor-v4 --adapter ml/adapters/local-lora-tutor-v4
 ```
 
 ## Safety
@@ -129,4 +153,4 @@ node scripts/register-local-lora-model.mjs --real --model local-lora-tutor-v3 --
 - Keep `External API mode` available; do not remove Gemini/OpenAI support.
 - Do not claim production-grade local inference or a full Level 4 milestone from the current numbers.
 - Safe CV wording after this phase:
-  - `Expanded the Local LoRA training pipeline to a 300-example curated Vietnamese tutor dataset and benchmarked a retrained local adapter with CUDA serving, registry activation, fallback handling, and transparent quality/latency reporting.`
+  - `Improved the Local LoRA pipeline through targeted eval-failure analysis, prompt-shape tuning, and retraining a focused Vietnamese tutor adapter, with CUDA serving, fallback validation, and transparent benchmark reporting.`

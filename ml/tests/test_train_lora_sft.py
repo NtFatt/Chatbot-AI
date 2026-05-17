@@ -63,6 +63,7 @@ class TrainLoraSftTests(unittest.TestCase):
             dataset_id="dataset-v2",
             training_example_count=24,
             validation_example_count=2,
+            targeted_failure_modes=["too_generic", "wrong_format"],
             is_mock_training=False,
             device="cpu",
             cuda_available=False,
@@ -80,6 +81,7 @@ class TrainLoraSftTests(unittest.TestCase):
         self.assertEqual(metadata["datasetId"], "dataset-v2")
         self.assertEqual(metadata["trainingExampleCount"], 24)
         self.assertEqual(metadata["validationExampleCount"], 2)
+        self.assertEqual(metadata["targetedFailureModes"], ["too_generic", "wrong_format"])
         self.assertEqual(metadata["finalTrainLoss"], 1.23)
         self.assertEqual(metadata["finalEvalLoss"], 1.11)
         self.assertEqual(metadata["startedAt"], "2026-05-16T00:00:00+00:00")

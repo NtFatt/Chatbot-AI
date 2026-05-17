@@ -13,7 +13,7 @@ const resolveCasePrefix = async (preferredPrefix?: string) => {
     return preferredPrefix;
   }
 
-  const prefixes = ['Phase 8 - ', 'Phase 7 - '];
+  const prefixes = ['Phase 9 - ', 'Phase 8 - ', 'Phase 7 - '];
   for (const prefix of prefixes) {
     const count = await prisma.evalCase.count({
       where: {
@@ -51,6 +51,12 @@ async function main() {
     }
 
     const evalCaseIds = evalCases.map((item) => item.id);
+    const localModelVersions =
+      options.localModelVersionIds.length === 0
+        ? []
+        : await Promise.all(
+            options.localModelVersionIds.map((id) => services.modelRegistryService.getVersionById(id)),
+          );
     const targets = [
       {
         label: 'internal_l3_tutor',
@@ -61,35 +67,51 @@ async function main() {
           notes: `${casePrefix.trim()} benchmark`,
         },
       },
-      {
-        label: 'local_lora',
-        enabled: env.LOCAL_LORA_ENABLED,
-        input: {
-          provider: 'local_lora' as const,
-          evalCaseIds,
-          notes: `${casePrefix.trim()} benchmark`,
-        },
-      },
-      {
-        label: 'OPENAI',
-        enabled: env.OPENAI_ENABLED && Boolean(env.OPENAI_API_KEY),
-        input: {
-          provider: 'OPENAI' as const,
-          model: env.OPENAI_MODEL,
-          evalCaseIds,
-          notes: `${casePrefix.trim()} benchmark`,
-        },
-      },
-      {
-        label: 'GEMINI',
-        enabled: env.GEMINI_ENABLED && Boolean(env.GEMINI_API_KEY),
-        input: {
-          provider: 'GEMINI' as const,
-          model: env.GEMINI_MODEL,
-          evalCaseIds,
-          notes: `${casePrefix.trim()} benchmark`,
-        },
-      },
+      ...(localModelVersions.length > 0
+        ? localModelVersions.map((version) => ({
+            label: `local_lora:${version.fineTunedModel ?? version.baseModel}`,
+            enabled: true,
+            input: {
+              modelVersionId: version.id,
+              evalCaseIds,
+              notes: `${casePrefix.trim()} benchmark`,
+            },
+          }))
+        : [
+            {
+              label: 'local_lora',
+              enabled: env.LOCAL_LORA_ENABLED,
+              input: {
+                provider: 'local_lora' as const,
+                evalCaseIds,
+                notes: `${casePrefix.trim()} benchmark`,
+              },
+            },
+          ]),
+      ...(!options.skipExternal
+        ? [
+            {
+              label: 'OPENAI',
+              enabled: env.OPENAI_ENABLED && Boolean(env.OPENAI_API_KEY),
+              input: {
+                provider: 'OPENAI' as const,
+                model: env.OPENAI_MODEL,
+                evalCaseIds,
+                notes: `${casePrefix.trim()} benchmark`,
+              },
+            },
+            {
+              label: 'GEMINI',
+              enabled: env.GEMINI_ENABLED && Boolean(env.GEMINI_API_KEY),
+              input: {
+                provider: 'GEMINI' as const,
+                model: env.GEMINI_MODEL,
+                evalCaseIds,
+                notes: `${casePrefix.trim()} benchmark`,
+              },
+            },
+          ]
+        : []),
     ];
 
     const runs = [];
@@ -108,11 +130,14 @@ async function main() {
         timeoutCount: summary.timeoutCount,
         fallbackCount: summary.fallbackCount,
         errorCount: summary.errorCount,
+        failureModeCounts: summary.failureModes,
         notes: run.notes,
       });
     }
 
-    const currentLocalLoraRun = runs.find((run) => run.target === 'local_lora');
+    const currentLocalLoraRun =
+      runs.find((run) => run.target === 'local_lora') ??
+      runs.find((run) => run.target.startsWith('local_lora:'));
     const internalRun = runs.find((run) => run.target === 'internal_l3_tutor');
 
     console.log(

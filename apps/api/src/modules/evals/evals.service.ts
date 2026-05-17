@@ -16,27 +16,16 @@ import type {
 
 import { env } from '../../config/env';
 import { ModelGatewayService } from '../../integrations/ai/model-gateway.service';
-import type { AIConversationMessage } from '../../integrations/ai/ai.types';
+import type { AIConversationMessage, LocalLoraTaskCategory } from '../../integrations/ai/ai.types';
 import { InternalL3TutorModelService } from '../../integrations/ai/internal-l3-tutor-model.service';
 import { AppError } from '../../utils/errors';
 import { ModelRegistryService } from '../model-registry/model-registry.service';
 import { ProvidersService } from '../providers/providers.service';
+import { scoreEvalOutput, summarizeFailureModes } from './eval-quality';
+import type { EvalFailureMode } from './eval-quality';
 import { EvalsRepository } from './evals.repository';
 
 const toIso = (value: Date) => value.toISOString();
-
-const normalizeText = (value: string) =>
-  value
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-const tokenize = (value: string) =>
-  normalizeText(value)
-    .split(' ')
-    .map((token) => token.trim())
-    .filter((token) => token.length >= 3);
 
 const average = (scores: number[]) =>
   scores.length === 0
@@ -122,61 +111,6 @@ const buildEvalPrompt = (evalCase: EvalCase): {
   };
 };
 
-const scoreEvalOutput = (evalCase: EvalCase, output: string) => {
-  const outputTokens = new Set(tokenize(output));
-  const idealTokens = evalCase.idealResponse ? Array.from(new Set(tokenize(evalCase.idealResponse))) : [];
-  const overlap =
-    idealTokens.length === 0
-      ? outputTokens.size > 0
-        ? 0.65
-        : 0
-      : idealTokens.filter((token) => outputTokens.has(token)).length / idealTokens.length;
-  const structureBonus =
-    evalCase.category === 'generate_quiz'
-      ? /(\?|A\.|B\.|C\.|D\.)/.test(output)
-        ? 0.15
-        : 0
-      : evalCase.category === 'generate_flashcards'
-        ? /(^[-*•]|\n[-*•]|\bterm\b|\bdefinition\b|\bq:\b|\ba:\b)/im.test(output)
-          ? 0.12
-          : 0
-      : evalCase.category === 'summarize_lesson'
-        ? /(^[-*•]|\n[-*•]|\n\d+\.)/m.test(output)
-          ? 0.1
-          : 0
-        : evalCase.category === 'study_plan'
-          ? /(\bngay\b|\btuan\b|day\s*\d+|week\s*\d+|^\d+\.)/im.test(output)
-            ? 0.12
-            : 0
-          : evalCase.category === 'compare_concepts'
-            ? /(giống|khác|so sánh|similar|different|whereas|while)/i.test(output)
-              ? 0.08
-              : 0
-            : evalCase.category === 'give_example'
-              ? /(ví dụ|example|for instance|class|public)/i.test(output)
-                ? 0.08
-                : 0
-              : evalCase.category === 'correct_student_answer' || evalCase.category === 'grade_answer'
-                ? /(đúng|sai|cần sửa|correct|incorrect|revise)/i.test(output)
-                  ? 0.08
-                  : 0
-        : evalCase.category === 'source_grounded_answer'
-          ? /(nguon|source|tai lieu|trich)/i.test(output)
-            ? 0.08
-            : 0
-          : 0;
-  const lengthFactor = Math.min(output.trim().length / 240, 1);
-  const score = Number(Math.min(1, overlap * 0.7 + structureBonus + lengthFactor * 0.2).toFixed(2));
-
-  return {
-    score,
-    notes:
-      idealTokens.length > 0
-        ? `Keyword overlap: ${Math.round(overlap * 100)}%. Structure bonus: ${structureBonus.toFixed(2)}.`
-        : `No reference answer provided. Length factor: ${lengthFactor.toFixed(2)}.`,
-  };
-};
-
 const resolveRuntimeProvider = (provider: string): ProviderKey => {
   switch (provider) {
     case 'internal_l3_tutor':
@@ -194,6 +128,24 @@ const resolveRuntimeProvider = (provider: string): ProviderKey => {
         'EVAL_PROVIDER_UNSUPPORTED',
         'The selected model version cannot be benchmarked with the current runtime adapters.',
       );
+  }
+};
+
+const toLocalLoraTaskCategory = (category: EvalCase['category']): LocalLoraTaskCategory | null => {
+  switch (category) {
+    case 'explain_concept':
+    case 'give_example':
+    case 'compare_concepts':
+    case 'correct_student_answer':
+    case 'generate_quiz':
+    case 'generate_flashcards':
+    case 'summarize_lesson':
+    case 'study_plan':
+    case 'source_grounded_answer':
+    case 'fallback_transparency':
+      return category;
+    default:
+      return null;
   }
 };
 
@@ -421,12 +373,13 @@ export class EvalsService {
             topP: provider === 'local_lora' ? env.LOCAL_LORA_TOP_P : undefined,
             maxNewTokens: provider === 'local_lora' ? env.LOCAL_LORA_MAX_NEW_TOKENS : undefined,
             contextMaxChars: provider === 'local_lora' ? env.LOCAL_LORA_CONTEXT_MAX_CHARS : undefined,
+            taskCategory: provider === 'local_lora' ? toLocalLoraTaskCategory(evalCase.category) : null,
           });
           output = response.text;
           latencyMs = response.latencyMs ?? 0;
         }
 
-        const scoring = scoreEvalOutput(evalCase, output);
+        const scoring = scoreEvalOutput(evalCase, output, latencyMs, provider);
 
         return {
           evalCaseId: evalCase.id,
@@ -435,6 +388,7 @@ export class EvalsService {
           notes: `${scoring.notes} Latency: ${latencyMs}ms.`,
           latencyMs,
           failed: false,
+          failureModes: scoring.failureModes as EvalFailureMode[],
         };
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Benchmark execution failed.';
@@ -445,6 +399,7 @@ export class EvalsService {
           notes: message,
           latencyMs: 0,
           failed: true,
+          failureModes: ['missed_task'] as EvalFailureMode[],
         };
       }
     };
@@ -475,6 +430,11 @@ export class EvalsService {
     const timeoutCount = results.filter((result) => /LOCAL_LORA_TIMEOUT/i.test(result.notes ?? '')).length;
     const errorCount = results.filter((result) => result.failed).length;
     const fallbackCount = 0;
+    const failureModeCounts = summarizeFailureModes(results);
+    const failureModesSummary = Object.entries(failureModeCounts)
+      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+      .map(([failureMode, count]) => `${failureMode}:${count}`)
+      .join(',');
     const benchmarkSummary = [
       `avgLatencyMs=${averageLatencyMs}`,
       `p50LatencyMs=${p50LatencyMs}`,
@@ -482,6 +442,7 @@ export class EvalsService {
       `timeoutCount=${timeoutCount}`,
       `fallbackCount=${fallbackCount}`,
       `errorCount=${errorCount}`,
+      `failureModes=${failureModesSummary || 'none'}`,
     ].join('; ');
 
     const run = await this.repository.createRun({

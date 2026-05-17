@@ -101,6 +101,18 @@ describe('audit-l4-dataset-quality', () => {
     expect(result.productionClaim).toBe('no');
   });
 
+  it('marks readyForTraining as targeted_demo when the real v4 dataset is clean', async () => {
+    const { buildCuratedTrainingExamples } = await import('../../../scripts/seed-l4-curated-training-data.mjs');
+    const examples = buildCuratedTrainingExamples({ version: 'v4' });
+    const result = auditExamples(examples, { version: 'v4' });
+
+    expect(result.approved).toBe(180);
+    expect(result.repeatedBoilerplate).toBe(0);
+    expect(result.missingFailureModes).toHaveLength(0);
+    expect(result.readyForTraining).toBe('targeted_demo');
+    expect(result.failureModeCounts.too_generic).toBeGreaterThan(0);
+  });
+
   it('formats a concise report', () => {
     const result = auditExamples(
       [

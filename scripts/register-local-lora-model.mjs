@@ -189,6 +189,7 @@ export const buildRealLocalLoraVersionInput = (options = {}) => {
         Number.isFinite(options.validationExampleCount)
           ? options.validationExampleCount
           : trainingMetadata.validationExampleCount ?? null,
+      targetedFailureModes: trainingMetadata.targetedFailureModes ?? [],
       isMockTraining: false,
       smokeValidated: false,
       runtimeMode: 'learning_engine_l3',

@@ -14,6 +14,22 @@ export const EXPECTED_CATEGORIES = [
   'source_grounded_answer',
   'fallback_transparency',
 ];
+export const EXPECTED_V4_FAILURE_MODES = [
+  'too_generic',
+  'no_common_mistake',
+  'no_practice_question',
+  'weak_example',
+  'wrong_format',
+  'missed_task',
+  'poor_correction_feedback',
+  'too_short',
+  'incomplete_quiz',
+  'incomplete_flashcards',
+  'bad_summary',
+  'overlong_answer',
+  'hallucinated_source',
+  'language_mismatch',
+];
 
 const VIETNAMESE_PATTERN =
   /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i;
@@ -48,6 +64,9 @@ export const resolveDatasetVersion = (dataset) => {
     return 'unknown';
   }
 
+  if (dataset.version >= 4 || /(?:^|\s)v4(?:\s|$)/i.test(dataset.name ?? '')) {
+    return 'v4';
+  }
   if (dataset.version >= 3 || /(?:^|\s)v3(?:\s|$)/i.test(dataset.name ?? '')) {
     return 'v3';
   }
@@ -56,6 +75,9 @@ export const resolveDatasetVersion = (dataset) => {
   }
 
   const sourceIds = (dataset.examples ?? []).map((example) => example.sourceId ?? '').join(' ');
+  if (/dev-targeted-v4__/i.test(sourceIds)) {
+    return 'v4';
+  }
   if (/dev-curated-v3-/i.test(sourceIds)) {
     return 'v3';
   }
@@ -90,6 +112,11 @@ const detectRepeatedBoilerplate = (outputs) => {
   return repeatedBoilerplate;
 };
 
+const parseV4FailureModeFromSourceId = (sourceId) => {
+  const match = String(sourceId ?? '').match(/^dev-targeted-v4__(.+?)__(.+?)__/i);
+  return match?.[1] ?? null;
+};
+
 export function auditExamples(examples, options = {}) {
   const version = String(options.version || 'unknown').toLowerCase();
   const limits = {
@@ -99,6 +126,7 @@ export function auditExamples(examples, options = {}) {
   const issues = [];
   const seenPrompts = new Set();
   const categoryCounts = {};
+  const failureModeCounts = {};
 
   let approved = 0;
   let duplicates = 0;
@@ -119,8 +147,12 @@ export function auditExamples(examples, options = {}) {
     const rawOutput = typeof example.idealResponse === 'string' ? example.idealResponse.trim() : '';
     const output = normalizeText(example.idealResponse);
     const category = example.learningMode || example.topic || 'unknown';
+    const failureMode = parseV4FailureModeFromSourceId(example.sourceId);
 
     categoryCounts[category] = (categoryCounts[category] || 0) + 1;
+    if (failureMode) {
+      failureModeCounts[failureMode] = (failureModeCounts[failureMode] || 0) + 1;
+    }
     outputs.push(rawOutput);
 
     if (!prompt) {
@@ -165,11 +197,21 @@ export function auditExamples(examples, options = {}) {
   }
 
   const missingCategories = EXPECTED_CATEGORIES.filter((category) => !categoryCounts[category]);
+  const missingFailureModes =
+    version === 'v4'
+      ? EXPECTED_V4_FAILURE_MODES.filter((failureMode) => !failureModeCounts[failureMode])
+      : [];
   const v3CategoryShortfalls = Object.entries(categoryCounts)
     .filter(([category, count]) => EXPECTED_CATEGORIES.includes(category) && version === 'v3' && count < 30)
     .map(([category, count]) => ({ category, count }));
   const v3MissingExpected = version === 'v3'
     ? EXPECTED_CATEGORIES.filter((category) => (categoryCounts[category] ?? 0) < 30).map((category) => ({
+        category,
+        count: categoryCounts[category] ?? 0,
+      }))
+    : [];
+  const v4CategoryShortfalls = version === 'v4'
+    ? EXPECTED_CATEGORIES.filter((category) => (categoryCounts[category] ?? 0) < 10).map((category) => ({
         category,
         count: categoryCounts[category] ?? 0,
       }))
@@ -188,6 +230,15 @@ export function auditExamples(examples, options = {}) {
 
   let readyForTraining = 'pipeline_only';
   if (
+    version === 'v4' &&
+    approved >= 150 &&
+    valid >= 150 &&
+    missingCategories.length === 0 &&
+    v4CategoryShortfalls.length === 0 &&
+    missingFailureModes.length === 0
+  ) {
+    readyForTraining = 'targeted_demo';
+  } else if (
     version === 'v3' &&
     approved >= 300 &&
     valid >= 300 &&
@@ -215,9 +266,12 @@ export function auditExamples(examples, options = {}) {
     fakeCitations,
     repeatedBoilerplate,
     categoryCounts,
+    failureModeCounts,
     missingCategories,
+    missingFailureModes,
     v3CategoryShortfalls,
     v3MissingExpected,
+    v4CategoryShortfalls,
     readyForTraining,
     productionClaim: 'no',
     issues,
@@ -226,13 +280,23 @@ export function auditExamples(examples, options = {}) {
 
 export function formatAuditReport(datasetName, result) {
   const categoryCoverage =
-    result.version === 'v3'
+    result.version === 'v4'
+      ? result.v4CategoryShortfalls.length === 0
+        ? 'ok'
+        : `under_target: ${result.v4CategoryShortfalls.map((item) => `${item.category}=${item.count}`).join(', ')}`
+      : result.version === 'v3'
       ? result.v3MissingExpected.length === 0
         ? 'ok'
         : `under_target: ${result.v3MissingExpected.map((item) => `${item.category}=${item.count}`).join(', ')}`
       : result.missingCategories.length === 0
         ? 'ok'
         : `missing: ${result.missingCategories.join(', ')}`;
+  const failureModeCoverage =
+    result.version === 'v4'
+      ? result.missingFailureModes.length === 0
+        ? 'ok'
+        : `missing: ${result.missingFailureModes.join(', ')}`
+      : 'n/a';
 
   const lines = [
     `Dataset: ${datasetName}`,
@@ -247,6 +311,7 @@ export function formatAuditReport(datasetName, result) {
     `fakeCitations: ${result.fakeCitations}`,
     `repeatedBoilerplate: ${result.repeatedBoilerplate}`,
     `categoryCoverage: ${categoryCoverage}`,
+    `failureModeCoverage: ${failureModeCoverage}`,
     `readyForTraining: ${result.readyForTraining}`,
     `productionClaim: ${result.productionClaim}`,
   ];
@@ -257,6 +322,15 @@ export function formatAuditReport(datasetName, result) {
       left.localeCompare(right),
     )) {
       lines.push(`  ${category}: ${count}`);
+    }
+  }
+
+  if (Object.keys(result.failureModeCounts).length > 0) {
+    lines.push('--- Failure Mode Counts ---');
+    for (const [failureMode, count] of Object.entries(result.failureModeCounts).sort(([left], [right]) =>
+      left.localeCompare(right),
+    )) {
+      lines.push(`  ${failureMode}: ${count}`);
     }
   }
 
@@ -327,8 +401,13 @@ export async function runQualityAudit(prisma = new PrismaClient(), options = {})
     console.log('');
 
     const versionGateFailed =
-      resolvedVersion === 'v3' &&
-      (result.approved < 300 || result.v3MissingExpected.length > 0 || result.readyForTraining !== 'stronger_demo');
+      (resolvedVersion === 'v3' &&
+        (result.approved < 300 || result.v3MissingExpected.length > 0 || result.readyForTraining !== 'stronger_demo')) ||
+      (resolvedVersion === 'v4' &&
+        (result.approved < 150 ||
+          result.v4CategoryShortfalls.length > 0 ||
+          result.missingFailureModes.length > 0 ||
+          result.readyForTraining !== 'targeted_demo'));
     const generalGateFailed = result.readyForTraining === 'not_ready' || result.issues.length > 0;
     if (versionGateFailed || generalGateFailed) {
       exitCode = 1;

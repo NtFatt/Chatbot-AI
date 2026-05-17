@@ -11,7 +11,7 @@ describe('run-phase7-benchmark script helpers', () => {
   it('parses benchmark summary notes with p50 and p95 latency fields', () => {
     expect(
       parseRunSummary(
-        'Phase 8 benchmark | avgLatencyMs=24000; p50LatencyMs=22000; p95LatencyMs=31000; timeoutCount=0; fallbackCount=1; errorCount=2',
+        'Phase 8 benchmark | avgLatencyMs=24000; p50LatencyMs=22000; p95LatencyMs=31000; timeoutCount=0; fallbackCount=1; errorCount=2; failureModes=wrong_format:4,language_mismatch:2',
       ),
     ).toEqual({
       avgLatencyMs: 24000,
@@ -20,6 +20,10 @@ describe('run-phase7-benchmark script helpers', () => {
       timeoutCount: 0,
       fallbackCount: 1,
       errorCount: 2,
+      failureModes: {
+        wrong_format: 4,
+        language_mismatch: 2,
+      },
     });
   });
 
@@ -84,8 +88,18 @@ describe('run-phase7-benchmark script helpers', () => {
   });
 
   it('accepts an explicit case prefix argument', () => {
-    expect(parseArgs(['--case-prefix', 'Phase 8 - '])).toEqual({
-      casePrefix: 'Phase 8 - ',
+    expect(parseArgs(['--case-prefix', 'Phase 9 - ', '--local-model-version-ids', 'mv-v3,mv-v4', '--skip-external'])).toEqual({
+      casePrefix: 'Phase 9 - ',
+      localModelVersionIds: ['mv-v3', 'mv-v4'],
+      skipExternal: true,
+    });
+  });
+
+  it('returns default benchmark args when no options are supplied', () => {
+    expect(parseArgs([])).toEqual({
+      casePrefix: '',
+      localModelVersionIds: [],
+      skipExternal: false,
     });
   });
 });

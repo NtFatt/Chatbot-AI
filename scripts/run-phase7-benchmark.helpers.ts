@@ -8,11 +8,20 @@ export const HISTORICAL_COMPARISON = {
 export const parseArgs = (argv: string[]) => {
   const options = {
     casePrefix: '',
+    localModelVersionIds: [] as string[],
+    skipExternal: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
     if (argv[index] === '--case-prefix') {
       options.casePrefix = argv[++index] ?? '';
+    } else if (argv[index] === '--local-model-version-ids') {
+      options.localModelVersionIds = (argv[++index] ?? '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+    } else if (argv[index] === '--skip-external') {
+      options.skipExternal = true;
     }
   }
 
@@ -27,14 +36,26 @@ export const parseRunSummary = (notes: string | null) => {
     timeoutCount: 0,
     fallbackCount: 0,
     errorCount: 0,
+    failureModes: {} as Record<string, number>,
   };
 
   const matches = notes?.match(
-    /avgLatencyMs=(\d+); p50LatencyMs=(\d+); p95LatencyMs=(\d+); timeoutCount=(\d+); fallbackCount=(\d+); errorCount=(\d+)/i,
+    /avgLatencyMs=(\d+); p50LatencyMs=(\d+); p95LatencyMs=(\d+); timeoutCount=(\d+); fallbackCount=(\d+); errorCount=(\d+)(?:; failureModes=([^|]+))?/i,
   );
   if (!matches) {
     return summary;
   }
+
+  const failureModes = Object.fromEntries(
+    String(matches[7] ?? '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0 && item !== 'none')
+      .map((item) => {
+        const [failureMode, count] = item.split(':');
+        return [failureMode, Number(count ?? 0)];
+      }),
+  );
 
   return {
     avgLatencyMs: Number(matches[1] ?? 0),
@@ -43,6 +64,7 @@ export const parseRunSummary = (notes: string | null) => {
     timeoutCount: Number(matches[4] ?? 0),
     fallbackCount: Number(matches[5] ?? 0),
     errorCount: Number(matches[6] ?? 0),
+    failureModes,
   };
 };
 

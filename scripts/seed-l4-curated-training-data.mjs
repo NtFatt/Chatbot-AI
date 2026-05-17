@@ -67,6 +67,7 @@ const buildDryRunPrisma = () => ({
   trainingExample: {
     findMany: async () => [],
     createMany: async () => ({ count: 0 }),
+    update: async () => null,
     count: async () => 0,
   },
 });
@@ -130,15 +131,43 @@ export async function seedCuratedDataset(prisma = new PrismaClient(), options = 
 
   const existingExamples = await prisma.trainingExample.findMany({
     where: { datasetId: dataset.id },
-    select: { sourceId: true, inputMessages: true },
+    select: {
+      id: true,
+      sourceId: true,
+      subject: true,
+      topic: true,
+      learningMode: true,
+      userLevel: true,
+      inputMessages: true,
+      idealResponse: true,
+      qualityScore: true,
+      status: true,
+    },
   });
 
-  const existingSourceIds = new Set(existingExamples.map((item) => item.sourceId).filter(Boolean));
+  const existingBySourceId = new Map(existingExamples.map((item) => [item.sourceId, item]).filter(([sourceId]) => Boolean(sourceId)));
   const existingPrompts = new Set(existingExamples.map((item) => normalizePrompt(item.inputMessages)).filter(Boolean));
 
   const toCreate = normalizedExamples.filter((example) => {
     const prompt = normalizePrompt(example.inputMessages);
-    return !existingSourceIds.has(example.sourceId) && !existingPrompts.has(prompt);
+    return !existingBySourceId.has(example.sourceId) && !existingPrompts.has(prompt);
+  });
+  const toUpdate = normalizedExamples.filter((example) => {
+    const existing = existingBySourceId.get(example.sourceId);
+    if (!existing) {
+      return false;
+    }
+
+    return (
+      existing.subject !== example.subject ||
+      existing.topic !== example.topic ||
+      existing.learningMode !== example.learningMode ||
+      existing.userLevel !== example.userLevel ||
+      normalizePrompt(existing.inputMessages) !== normalizePrompt(example.inputMessages) ||
+      String(existing.idealResponse ?? '').trim() !== String(example.idealResponse ?? '').trim() ||
+      existing.qualityScore !== example.qualityScore ||
+      String(existing.status ?? '').toLowerCase() !== String(example.status ?? '').toLowerCase()
+    );
   });
 
   if (!dryRun && toCreate.length > 0) {
@@ -158,18 +187,41 @@ export async function seedCuratedDataset(prisma = new PrismaClient(), options = 
       })),
     });
   }
+  if (!dryRun) {
+    for (const example of toUpdate) {
+      const existing = existingBySourceId.get(example.sourceId);
+      if (!existing) {
+        continue;
+      }
+
+      await prisma.trainingExample.update({
+        where: { id: existing.id },
+        data: {
+          subject: example.subject,
+          topic: example.topic,
+          learningMode: example.learningMode,
+          userLevel: example.userLevel,
+          inputMessages: example.inputMessages,
+          idealResponse: example.idealResponse,
+          qualityScore: example.qualityScore,
+          status: example.status,
+        },
+      });
+    }
+  }
 
   const approvedCount = dryRun
     ? existingExamples.length + toCreate.length
     : await prisma.trainingExample.count({ where: { datasetId: dataset.id, status: 'approved' } });
   const distribution = buildDistribution(normalizedExamples);
-  const skippedExamples = normalizedExamples.length - toCreate.length;
+  const skippedExamples = normalizedExamples.length - toCreate.length - toUpdate.length;
 
   console.log(`${dryRun ? '[DRY RUN] ' : ''}Seed dataset: ${datasetName}`);
   console.log(`version: ${definition.version}`);
   console.log(`datasetId: ${dataset.id}`);
   console.log(`totalExamples: ${normalizedExamples.length}`);
   console.log(`insertedExamples: ${toCreate.length}`);
+  console.log(`updatedExamples: ${toUpdate.length}`);
   console.log(`skippedExamples: ${skippedExamples}`);
   console.log(`approvedExamples: ${approvedCount}`);
   console.log('--- Category Distribution ---');
@@ -183,6 +235,7 @@ export async function seedCuratedDataset(prisma = new PrismaClient(), options = 
     version: definition.version,
     totalExamples: normalizedExamples.length,
     insertedExamples: toCreate.length,
+    updatedExamples: toUpdate.length,
     skippedExamples,
     approvedExamples: approvedCount,
     dryRun,

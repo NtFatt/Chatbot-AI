@@ -46,6 +46,7 @@ GENERATION_CONFIG: Dict[str, Any] = {
     "max_new_tokens": 64,
     "temperature": 0.2,
     "top_p": 0.9,
+    "repetition_penalty": 1.05,
 }
 CONTEXT_MAX_CHARS = 6000
 
@@ -59,6 +60,7 @@ def read_generation_config_from_env() -> Dict[str, Any]:
         "max_new_tokens": max(16, min(max_new_tokens, 256)),
         "temperature": max(0.0, min(temperature, 2.0)),
         "top_p": max(0.1, min(top_p, 1.0)),
+        "repetition_penalty": 1.05,
     }
 
 
@@ -151,6 +153,10 @@ def resolve_request_temperature(request: ChatCompletionRequest) -> float:
 def resolve_request_top_p(request: ChatCompletionRequest) -> float:
     value = request.top_p if request.top_p is not None else GENERATION_CONFIG["top_p"]
     return max(0.1, min(float(value), 1.0))
+
+
+def resolve_request_repetition_penalty() -> float:
+    return max(1.0, min(float(GENERATION_CONFIG.get("repetition_penalty", 1.05)), 1.5))
 
 
 @app.on_event("startup")
@@ -288,6 +294,7 @@ async def chat_completions(request: ChatCompletionRequest) -> Dict[str, Any]:
         temperature = resolve_request_temperature(request)
         max_new_tokens = resolve_request_max_new_tokens(request)
         top_p = resolve_request_top_p(request)
+        repetition_penalty = resolve_request_repetition_penalty()
 
         with torch.inference_mode():
             generation_kwargs = {
@@ -295,6 +302,7 @@ async def chat_completions(request: ChatCompletionRequest) -> Dict[str, Any]:
                 "temperature": temperature,
                 "do_sample": temperature > 0,
                 "pad_token_id": TOKENIZER.eos_token_id,
+                "repetition_penalty": repetition_penalty,
                 "use_cache": True,
             }
             if temperature > 0:

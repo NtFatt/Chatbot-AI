@@ -5,6 +5,18 @@ export interface AIConversationMessage {
   content: string;
 }
 
+export type LocalLoraTaskCategory =
+  | 'explain_concept'
+  | 'give_example'
+  | 'compare_concepts'
+  | 'correct_student_answer'
+  | 'generate_quiz'
+  | 'generate_flashcards'
+  | 'summarize_lesson'
+  | 'study_plan'
+  | 'source_grounded_answer'
+  | 'fallback_transparency';
+
 export interface AIProviderRequest {
   provider: ProviderKey;
   model: string;
@@ -15,6 +27,7 @@ export interface AIProviderRequest {
   topP?: number;
   maxNewTokens?: number;
   contextMaxChars?: number;
+  taskCategory?: LocalLoraTaskCategory | null;
   structuredOutput?: {
     name: string;
     description?: string;
